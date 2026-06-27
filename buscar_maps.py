@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright
 
-from crm_utils import ARCHIVO_EXCEL, NICHOS, ZONAS, asegurar_excel, fusionar_registro, guardar_excel
+from crm_utils import ARCHIVO_EXCEL, NICHOS, ZONAS, asegurar_excel, fusionar_registro, guardar_excel, normalizar_telefono
 
 MAX_POR_BUSQUEDA = 40
 
@@ -12,6 +12,12 @@ MAX_POR_BUSQUEDA = 40
 def limpiar(texto):
     return texto.replace("\n", " ").strip() if texto else ""
 
+
+
+def limpiar_telefono(valor):
+    texto = limpiar(valor)
+    digitos = normalizar_telefono(texto)
+    return texto if len(digitos) >= 8 else ""
 
 def generar_busquedas(nichos=None, zonas=None):
     nichos = nichos or NICHOS
@@ -64,8 +70,9 @@ def extraer_detalle(page, link, busqueda):
             t = limpiar(e.inner_text(timeout=500))
             href = e.get_attribute("href") if e.evaluate("el => el.tagName.toLowerCase() === 'a'") else ""
             bajo = t.lower()
-            if not datos["Telefono"] and ("+52" in t or t.startswith("33") or " 33" in t):
-                datos["Telefono"] = t
+            telefono_limpio = limpiar_telefono(t)
+            if not datos["Telefono"] and telefono_limpio and ("+52" in t or t.startswith("33") or " 33" in t or len(normalizar_telefono(t)) >= 10):
+                datos["Telefono"] = telefono_limpio
             if href and href.startswith("http") and not datos["Sitio_web"] and all(x not in href for x in ["google", "gstatic", "ggpht"]):
                 datos["Sitio_web"] = href
             if not datos["Direccion"] and any(z in t for z in ["Guadalajara", "Zapopan", "Tlaquepaque", "Jalisco"]):

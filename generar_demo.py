@@ -5,7 +5,7 @@ from pathlib import Path
 
 from crm_utils import (
     ARCHIVO_EXCEL, CLIENTES_DEFAULT, PLANTILLA_DEFAULT, asegurar_excel, carpeta_unica,
-    estilo_por_nicho, guardar_excel, reemplazar_en_archivo, slugify,
+    estilo_por_nicho, guardar_excel, normalizar_telefono, reemplazar_en_archivo, slugify,
 )
 
 PLACEHOLDERS = {
@@ -24,6 +24,55 @@ def demo_vacia(valor):
         return True
     texto = str(valor).strip()
     return not texto or texto.lower() in {"nan", "none", "null"}
+
+
+def _valor_no_vacio(valor):
+    return not demo_vacia(valor)
+
+
+def _leer_restaurant_json(path):
+    ruta = Path(str(path or "")).expanduser()
+    if not ruta.exists() or not ruta.is_file():
+        return {}
+    try:
+        return json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def sincronizar_datos_demo_excel(id_prospecto, archivo=ARCHIVO_EXCEL):
+    """Sincroniza campos de la demo con Excel sin borrar teléfonos existentes."""
+    df = asegurar_excel(archivo)
+    fila = df[df["ID"].astype(str) == str(id_prospecto).strip()]
+    if fila.empty:
+        print("ID no encontrado.")
+        return df
+
+    idx = fila.index[0]
+    restaurant_json = str(df.at[idx, "Restaurant_JSON"] or "").strip()
+    datos_json = _leer_restaurant_json(restaurant_json)
+
+    telefono_excel = str(df.at[idx, "Telefono"] or "").strip()
+    telefono_json = str(datos_json.get("telefono") or datos_json.get("whatsapp") or "").strip()
+    if normalizar_telefono(telefono_json) and not normalizar_telefono(telefono_excel):
+        df.at[idx, "Telefono"] = telefono_json
+
+    campos_json = {
+        "Google_Maps": "google_maps",
+        "Demo": "demo",
+        "Repositorio_GitHub": "repositorio_github",
+        "Codex_Task": "codex_task",
+        "Restaurant_JSON": "restaurant_json",
+    }
+    for columna, clave_json in campos_json.items():
+        valor_actual = df.at[idx, columna] if columna in df.columns else ""
+        valor_json = str(datos_json.get(clave_json, "")).strip()
+        if valor_json and not _valor_no_vacio(valor_actual):
+            df.at[idx, columna] = valor_json
+
+    df["Telefono"] = df["Telefono"].astype("object")
+    guardar_excel(df, archivo)
+    return df
 
 
 def elegir_prospecto(id_prospecto=None, archivo=ARCHIVO_EXCEL):
@@ -134,7 +183,9 @@ Usa estas rutas desde la carpeta public del proyecto:
 - Mantén React + Vite; no migres a otro framework.
 - No uses Tailwind CSS.
 - No agregues dependencias innecesarias.
-- Mantén las imágenes con rutas locales /hero.jpg, /logo.png, /galeria1.jpg, /galeria2.jpg y /galeria3.jpg.
+- Mantén las imágenes con rutas locales /hero.jpg, /logo.png, /galeria1.jpg, /galeria2.jpg y /galeria3.jpg cuando existan.
+- No dejes imágenes rotas: en src/App.jsx agrega fallback visual para hero, logo, galería y tarjetas de platillos usando onError, estados de carga o contenedores alternativos; en src/App.css usa gradientes de fondo cuando falten imágenes locales.
+- Si las imágenes locales no existen, usa placeholders visuales con gradientes CSS o imágenes temporales de Unsplash pertinentes al restaurante.
 - Optimiza para celular, rendimiento y claridad comercial.
 - No inventes datos sensibles. Si falta un dato, usa copy genérico y deja el código fácil de editar.
 
@@ -188,18 +239,30 @@ def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENT
     restaurant_path.write_text(
         json.dumps(crear_restaurant_json(prospecto), ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    for img in ["hero.jpg", "logo.png", "galeria1.jpg", "galeria2.jpg", "galeria3.jpg"]:
-        placeholder = destino / "public" / img
-        placeholder.parent.mkdir(exist_ok=True)
-        if not placeholder.exists():
-            placeholder.write_text("Placeholder: reemplazar por imagen del restaurante.\n", encoding="utf-8")
+    public_path = destino / "public"
+    public_path.mkdir(exist_ok=True)
+    (public_path / "README_IMAGENES.txt").write_text(
+        "Reemplaza estas imágenes por archivos reales del restaurante antes de publicar:\n"
+        "- hero.jpg: imagen principal del local o platillo estrella.\n"
+        "- logo.png: logo del restaurante con fondo transparente si es posible.\n"
+        "- galeria1.jpg: foto del ambiente o fachada.\n"
+        "- galeria2.jpg: foto de platillo destacado.\n"
+        "- galeria3.jpg: foto de clientes, mesa servida o producto destacado.\n"
+        "\nSi alguna imagen falta, la demo debe mostrar gradientes CSS o imágenes temporales de Unsplash para evitar imágenes rotas.\n",
+        encoding="utf-8",
+    )
 
     idx = df[df["ID"].astype(str) == str(prospecto["ID"])].index[0]
+    telefono = str(prospecto.get("Telefono", "")).strip()
+    if normalizar_telefono(telefono):
+        df.at[idx, "Telefono"] = telefono
     df.at[idx, "Demo"] = str(destino)
     df.at[idx, "Estado"] = "Demo creada"
     df.at[idx, "Codex_Task"] = str(task_path)
     df.at[idx, "Restaurant_JSON"] = str(restaurant_path)
+    df["Telefono"] = df["Telefono"].astype("object")
     guardar_excel(df, archivo)
+    sincronizar_datos_demo_excel(prospecto["ID"], archivo)
     print("Demo creada:")
     print(destino)
     print("\nArchivo para Codex:")
