@@ -1,0 +1,4 @@
+pandas
+openpyxl
+# Opcional: copia automáticamente codex_task.md al portapapeles para Codex Online.
+pyperclip

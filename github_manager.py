@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 from crm_utils import ARCHIVO_EXCEL, asegurar_excel, guardar_excel, slugify
+from codex_manager import asegurar_archivos_codex
 
 
 def _ejecutar(comando, cwd=None, check=True):
@@ -77,6 +78,21 @@ def _preparar_git(carpeta_demo):
     return True, ""
 
 
+
+def _commit_cambios_codex(carpeta_demo):
+    add = _ejecutar(["git", "add", "prompt_codex.txt", "codex_task.md", "restaurant.json"], cwd=carpeta_demo, check=False)
+    if add.returncode != 0:
+        return False, f"Error al agregar archivos Codex a git: {_mensaje_error(add)}"
+
+    diff = _ejecutar(["git", "diff", "--cached", "--quiet"], cwd=carpeta_demo, check=False)
+    if diff.returncode == 0:
+        return True, ""
+
+    commit = _ejecutar(["git", "commit", "-m", "Preparar tarea para Codex Online"], cwd=carpeta_demo, check=False)
+    if commit.returncode != 0:
+        return False, f"Error al crear commit de archivos Codex: {_mensaje_error(commit)}"
+    return True, ""
+
 def crear_repo_demo(id_prospecto):
     """Crea un repositorio público en GitHub para la demo de un prospecto."""
     if not _validar_git() or not _validar_gh():
@@ -116,7 +132,14 @@ def crear_repo_demo(id_prospecto):
         print("Operación cancelada.")
         return None
 
+    archivos_codex = asegurar_archivos_codex(carpeta_demo, prospecto)
+
     ok, error = _preparar_git(carpeta_demo)
+    if not ok:
+        print(error)
+        return None
+
+    ok, error = _commit_cambios_codex(carpeta_demo)
     if not ok:
         print(error)
         return None
@@ -147,11 +170,18 @@ def crear_repo_demo(id_prospecto):
     idx = fila.index[0]
     df.at[idx, "Estado"] = "Repositorio creado"
     df.at[idx, "Repositorio_GitHub"] = url
+    df.at[idx, "Codex_Task"] = str(archivos_codex["codex_task"])
+    df.at[idx, "Restaurant_JSON"] = str(archivos_codex["restaurant_json"])
     guardar_excel(df, ARCHIVO_EXCEL)
 
-    print("Repositorio creado.")
-    print("URL:")
+    print("Demo creada:")
+    print(carpeta_demo)
+    print("\nRepo GitHub:")
     print(url)
+    print("\nArchivo para Codex:")
+    print(archivos_codex["codex_task"])
+    print("\nSiguiente paso:")
+    print("Abrir Codex Online, seleccionar el repo y pegar la tarea.")
     return url
 
 
