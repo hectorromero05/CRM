@@ -1,6 +1,7 @@
 from buscar_maps import buscar_prospectos, generar_busquedas
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demo, generar_demos_lote, prospectos_para_demo_lote
+from github_manager import mostrar_prospectos_para_repo
 
 
 def ver(df=None, filtro=None):
@@ -124,7 +125,8 @@ CRM Restaurantes
 6. Generar demo para un prospecto
 7. Generar demos en lote
 8. Exportar lista filtrada
-9. Salir
+9. Crear repositorio GitHub
+10. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
@@ -135,7 +137,8 @@ CRM Restaurantes
         elif op == "6": generar_demo()
         elif op == "7": generar_demos_en_lote()
         elif op == "8": exportar_filtrada()
-        elif op == "9": break
+        elif op == "9": mostrar_prospectos_para_repo()
+        elif op == "10": break
         else: print("Opción no válida.")
 
 
