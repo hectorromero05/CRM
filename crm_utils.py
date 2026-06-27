@@ -11,7 +11,7 @@ ARCHIVO_EXCEL = "prospectos_restaurantes.xlsx"
 COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
     "Direccion", "Horario", "Categoria", "Google_Maps", "Prioridad", "Estado", "Demo",
-    "Notas", "Fecha_busqueda", "Repositorio_GitHub",
+    "Notas", "Fecha_busqueda", "Repositorio_GitHub", "Codex_Task", "Restaurant_JSON",
 ]
 
 ESTADOS = [
@@ -153,20 +153,20 @@ def fusionar_registro(df, registro):
 def estilo_por_nicho(nicho):
     n = normalizar_texto(nicho)
     if "marisco" in n:
-        return "costero moderno", "azul, blanco y turquesa"
+        return "estilo costero premium", ["azul océano", "turquesa", "blanco", "arena"]
     if "taquer" in n:
-        return "mexicano popular", "rojo, amarillo y negro"
+        return "estilo mexicano popular", ["rojo", "amarillo", "negro", "blanco"]
     if "cafeter" in n or "desayuno" in n:
-        return "cálido y artesanal", "beige, café y crema"
+        return "estilo cálido", ["beige", "café", "crema", "terracota"]
     if "argent" in n or "parrilla" in n:
-        return "parrilla elegante", "verde oscuro, madera y crema"
-    if "ramen" in n or "sushi" in n:
-        return "japonés urbano", "amarillo, negro y rojo"
+        return "estilo parrilla/argentino", ["verde oscuro", "madera", "crema", "negro carbón"]
+    if "ramen" in n or "sushi" in n or "japones" in n:
+        return "estilo japonés urbano", ["amarillo", "negro", "rojo", "rosa"]
     if "hamburg" in n:
-        return "urbano casual", "negro, rojo y naranja"
-    if "pizza" in n:
-        return "italiano familiar", "rojo, crema y verde"
-    return "restaurante moderno", "negro, crema y dorado"
+        return "estilo urbano", ["negro", "rojo", "naranja"]
+    if "pizza" in n or "italiano" in n:
+        return "estilo italiano", ["rojo", "crema", "verde"]
+    return "moderno, limpio, adaptable a celular", ["negro", "blanco", "gris", "color acento adaptable"]
 
 
 def carpeta_unica(base, nombre):

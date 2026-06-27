@@ -41,56 +41,110 @@ def elegir_prospecto(id_prospecto=None, archivo=ARCHIVO_EXCEL):
     return fila.iloc[0].to_dict(), df
 
 
-def crear_prompt(prospecto):
+def _lista_texto(valores):
+    if isinstance(valores, (list, tuple)):
+        return ", ".join(str(v) for v in valores)
+    return str(valores or "")
+
+
+def crear_restaurant_json(prospecto):
     estilo, colores = estilo_por_nicho(prospecto.get("Nicho", ""))
-    nombre = prospecto.get("Nombre", "Restaurante")
-    nicho = prospecto.get("Nicho", "restaurante")
-    seo = f"Página web para {nombre}, {nicho}, con menú, ubicación, galería, reseñas y botón de WhatsApp."
-    return f"""# Prompt para adaptar demo web de restaurante
+    secciones = [
+        "Hero con propuesta de valor y CTA a WhatsApp",
+        "Menú o productos destacados",
+        "Galería de ambiente y platillos",
+        "Historia breve del restaurante",
+        "Reseñas y confianza",
+        "Ubicación, horarios y Google Maps",
+        "CTA final para reservar o pedir por WhatsApp",
+    ]
+    imagenes = ["/hero.jpg", "/logo.png", "/galeria1.jpg", "/galeria2.jpg", "/galeria3.jpg"]
+    return {
+        "nombre": str(prospecto.get("Nombre", "")),
+        "telefono": str(prospecto.get("Telefono", "")),
+        "whatsapp": str(prospecto.get("Telefono", "")),
+        "google_maps": str(prospecto.get("Google_Maps", "")),
+        "direccion": str(prospecto.get("Direccion", "")),
+        "nicho": str(prospecto.get("Nicho", "")),
+        "categoria": str(prospecto.get("Categoria", "")),
+        "rating": str(prospecto.get("Rating", "")),
+        "resenas": str(prospecto.get("Resenas", "")),
+        "sitio_web": str(prospecto.get("Sitio_web", "")),
+        "tiene_web": str(prospecto.get("Tiene_web", "")),
+        "estilo_sugerido": estilo,
+        "colores_sugeridos": colores,
+        "secciones_recomendadas": secciones,
+        "imagenes_recomendadas": imagenes,
+    }
 
-Actúa como desarrollador frontend experto en React + Vite. Adapta esta plantilla para vender una página web profesional a este negocio.
 
-## Datos del negocio
-- Nombre: {nombre}
-- Teléfono / WhatsApp: {prospecto.get('Telefono', '')}
-- Google Maps: {prospecto.get('Google_Maps', '')}
-- Dirección: {prospecto.get('Direccion', '')}
+def crear_prompt(prospecto):
+    datos = crear_restaurant_json(prospecto)
+    nombre = datos["nombre"] or "Restaurante"
+    nicho = datos["nicho"] or "restaurante"
+    colores = _lista_texto(datos["colores_sugeridos"])
+    secciones = "\n".join(f"- {s}" for s in datos["secciones_recomendadas"])
+    imagenes = "\n".join(f"- {img}" for img in datos["imagenes_recomendadas"])
+    title = f"{nombre} | {nicho}"
+    description = f"Landing page profesional para {nombre}: {nicho}, ubicación, galería, reseñas y botón de WhatsApp."
+    return f"""Adapta esta plantilla para crear una landing page profesional para {nombre}.
+
+Actúa como desarrollador frontend senior especializado en React + Vite y páginas de restaurantes listas para vender. Trabaja sobre este repositorio manteniendo la estructura existente.
+
+## Datos del restaurante
+- Nombre del restaurante: {nombre}
+- Teléfono: {datos['telefono']}
+- WhatsApp: {datos['whatsapp']}
+- Google Maps: {datos['google_maps']}
+- Dirección: {datos['direccion']}
 - Nicho: {nicho}
-- Rating / reseñas: {prospecto.get('Rating', '')} / {prospecto.get('Resenas', '')}
+- Categoría: {datos['categoria']}
+- Rating: {datos['rating']}
+- Reseñas: {datos['resenas']}
+- Sitio web actual: {datos['sitio_web']}
+- Tiene web: {datos['tiene_web']}
 
 ## Estilo visual sugerido
-- Estilo: {estilo}
-- Colores: {colores}
-- Sensación: moderno, apetitoso, local, confiable y optimizado para convertir visitas en mensajes de WhatsApp.
+- Estilo: {datos['estilo_sugerido']}
+- Paleta de colores sugerida: {colores}
+- Debe sentirse moderno, apetitoso, confiable, rápido y optimizado para celular.
 
 ## Secciones recomendadas
-1. Hero con nombre del restaurante, propuesta de valor y botones a WhatsApp / Google Maps.
-2. Menú destacado con 6 platillos de ejemplo coherentes con el nicho.
-3. Galería con imágenes desde public/hero.jpg, public/galeria1.jpg, public/galeria2.jpg y public/galeria3.jpg.
-4. Sección de historia o ambiente del restaurante.
-5. Reseñas y confianza usando rating/reseñas si están disponibles.
-6. Ubicación con dirección, botón de Google Maps y horario.
-7. CTA final para reservar o pedir información por WhatsApp.
+{secciones}
 
-## Archivos a adaptar
-- index.html: cambia <title> y meta description con el texto SEO.
-- src/App.jsx o App.jsx: reemplaza textos genéricos por el nombre, teléfono, dirección, nicho y links reales.
-- src/App.css o App.css: aplica la paleta de colores sugerida, buen responsive y estilo visual de restaurante.
+## Rutas de imágenes locales disponibles
+Usa estas rutas desde la carpeta public del proyecto:
+{imagenes}
 
-## Imágenes sugeridas
-Usa estas rutas aunque todavía sean placeholders:
-- public/hero.jpg
-- public/logo.png
-- public/galeria1.jpg
-- public/galeria2.jpg
-- public/galeria3.jpg
+## Archivos que debes modificar
+1. src/App.jsx
+   - Reemplaza textos genéricos por contenido comercial para {nombre}.
+   - Agrega CTAs claros para WhatsApp y Google Maps.
+   - Crea secciones coherentes con el nicho {nicho}.
+   - Agrega un botón flotante de WhatsApp visible en móvil y escritorio.
+2. src/App.css
+   - Aplica la paleta sugerida: {colores}.
+   - Optimiza todo para celular primero, con diseño responsive.
+   - Mejora espaciados, tipografía, tarjetas, botones y galería.
+3. index.html
+   - Actualiza el title a: {title}
+   - Actualiza la meta description a: {description}
 
-## Texto SEO
-{seo}
+## Reglas técnicas obligatorias
+- Mantén React + Vite; no migres a otro framework.
+- No uses Tailwind CSS.
+- No agregues dependencias innecesarias.
+- Mantén las imágenes con rutas locales /hero.jpg, /logo.png, /galeria1.jpg, /galeria2.jpg y /galeria3.jpg.
+- Optimiza para celular, rendimiento y claridad comercial.
+- No inventes datos sensibles. Si falta un dato, usa copy genérico y deja el código fácil de editar.
 
-No inventes datos sensibles. Si falta información, usa copy comercial genérico y deja comentarios claros para completar después.
+## Objetivo final
+Deja una landing page profesional, visualmente atractiva y lista para mostrar al restaurante, con enfoque en que el visitante haga clic en WhatsApp o abra Google Maps.
 """
 
+
+def crear_codex_task(prospecto):
+    return crear_prompt(prospecto)
 
 def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENTES_DEFAULT, archivo=ARCHIVO_EXCEL):
     prospecto, df = elegir_prospecto(id_prospecto, archivo)
@@ -126,20 +180,13 @@ def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENT
             texto = re.sub(r'<meta name="description" content=".*?"\s*/?>', f'<meta name="description" content="{descripcion}" />', texto, flags=re.S)
         index.write_text(texto, encoding="utf-8")
 
-    (destino / "prompt_codex.txt").write_text(crear_prompt(prospecto), encoding="utf-8")
-    datos_restaurante = {
-        "id": str(prospecto.get("ID", "")),
-        "nombre": str(prospecto.get("Nombre", "")),
-        "nicho": str(prospecto.get("Nicho", "")),
-        "telefono": str(prospecto.get("Telefono", "")),
-        "rating": str(prospecto.get("Rating", "")),
-        "resenas": str(prospecto.get("Resenas", "")),
-        "direccion": str(prospecto.get("Direccion", "")),
-        "google_maps": str(prospecto.get("Google_Maps", "")),
-        "demo": str(destino),
-    }
-    (destino / "restaurant.json").write_text(
-        json.dumps(datos_restaurante, ensure_ascii=False, indent=2), encoding="utf-8"
+    prompt_path = destino / "prompt_codex.txt"
+    task_path = destino / "codex_task.md"
+    restaurant_path = destino / "restaurant.json"
+    prompt_path.write_text(crear_prompt(prospecto), encoding="utf-8")
+    task_path.write_text(crear_codex_task(prospecto), encoding="utf-8")
+    restaurant_path.write_text(
+        json.dumps(crear_restaurant_json(prospecto), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     for img in ["hero.jpg", "logo.png", "galeria1.jpg", "galeria2.jpg", "galeria3.jpg"]:
         placeholder = destino / "public" / img
@@ -150,9 +197,15 @@ def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENT
     idx = df[df["ID"].astype(str) == str(prospecto["ID"])].index[0]
     df.at[idx, "Demo"] = str(destino)
     df.at[idx, "Estado"] = "Demo creada"
+    df.at[idx, "Codex_Task"] = str(task_path)
+    df.at[idx, "Restaurant_JSON"] = str(restaurant_path)
     guardar_excel(df, archivo)
-    print(f"Demo creada en: {destino}")
-    print(f"Prompt creado en: {destino / 'prompt_codex.txt'}")
+    print("Demo creada:")
+    print(destino)
+    print("\nArchivo para Codex:")
+    print(task_path)
+    print("\nSiguiente paso:")
+    print("Abrir Codex Online, seleccionar el repo y pegar la tarea.")
     return destino
 
 
@@ -177,6 +230,7 @@ def generar_demos_lote(ids, plantilla=PLANTILLA_DEFAULT, clientes=CLIENTES_DEFAU
                     "id": id_limpio,
                     "carpeta": Path(destino),
                     "prompt": Path(destino) / "prompt_codex.txt",
+                    "codex_task": Path(destino) / "codex_task.md",
                 })
             else:
                 fallidas.append({"id": id_limpio, "error": "No se pudo crear la demo."})
