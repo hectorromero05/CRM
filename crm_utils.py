@@ -11,7 +11,7 @@ ARCHIVO_EXCEL = "prospectos_restaurantes.xlsx"
 COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
     "Direccion", "Horario", "Categoria", "Google_Maps", "Prioridad", "Estado", "Demo",
-    "Notas", "Fecha_busqueda",
+    "Notas", "Fecha_busqueda", "Repositorio_GitHub",
 ]
 
 ESTADOS = [

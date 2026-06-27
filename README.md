@@ -25,7 +25,8 @@ Menú disponible:
 6. Generar demo para un prospecto
 7. Generar demos en lote
 8. Exportar lista filtrada
-9. Salir
+9. Crear repositorio GitHub
+10. Salir
 
 ## Buscar prospectos
 
@@ -87,6 +88,7 @@ Columnas:
 - Demo
 - Notas
 - Fecha_busqueda
+- Repositorio_GitHub
 
 El sistema evita duplicados usando nombre normalizado, teléfono, link de Google Maps y dirección. Si encuentra un registro existente, intenta completar datos faltantes sin crear otra fila.
 
@@ -210,6 +212,55 @@ public/galeria1.jpg
 public/galeria2.jpg
 public/galeria3.jpg
 ```
+
+## Crear repositorio GitHub para una demo
+
+Después de generar una demo, puedes subirla automáticamente a un repositorio público nuevo en GitHub desde `python main.py` con la opción **9. Crear repositorio GitHub**.
+
+La opción muestra las columnas `ID`, `Nombre` y `Demo`, pide el ID del prospecto y usa la ruta guardada en `Demo` como carpeta fuente del repositorio. Si la carpeta no existe, si el repositorio ya existe o si hay un problema con Git/GitHub CLI, la operación se cancela mostrando el aviso correspondiente.
+
+### Instalar GitHub CLI
+
+Descarga e instala GitHub CLI desde:
+
+```text
+https://cli.github.com/
+```
+
+Después inicia sesión una vez:
+
+```bash
+gh auth login
+```
+
+### Comandos usados
+
+Si la carpeta de la demo todavía no tiene Git, el CRM ejecuta dentro de esa carpeta:
+
+```bash
+git init
+git add .
+git commit -m "Primera versión"
+```
+
+Luego configura la rama principal y crea/sube el repositorio público con GitHub CLI:
+
+```bash
+git branch -M main
+gh repo create NOMBRE_REPO --public --source . --remote origin --push
+git push -u origin main
+```
+
+El nombre del repositorio se genera a partir del nombre del restaurante: elimina acentos y caracteres especiales, reemplaza espacios por guiones, usa minúsculas y agrega el sufijo `-web`. Ejemplos:
+
+- `Mariscos El Jarocho` → `mariscos-el-jarocho-web`
+- `Quilombo` → `quilombo-web`
+- `Ruma Café` → `ruma-cafe-web`
+
+Cuando el repositorio se crea correctamente, el CRM actualiza automáticamente el Excel:
+
+- `Estado` = `Repositorio creado`
+- `Repositorio_GitHub` = URL del repositorio, por ejemplo `https://github.com/hectorromero05/mariscos-el-jarocho-web`
 
 ## Subir después a GitHub y Vercel
 
