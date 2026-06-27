@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from crm_utils import ARCHIVO_EXCEL, asegurar_excel, guardar_excel, slugify
+from crm_utils import ARCHIVO_EXCEL, asegurar_excel, guardar_excel, normalizar_telefono, slugify
 from codex_manager import asegurar_archivos_codex
 
 
@@ -168,11 +168,20 @@ def crear_repo_demo(id_prospecto):
 
     url = f"https://github.com/{usuario}/{nombre_repo}"
     idx = fila.index[0]
+    if normalizar_telefono(telefono):
+        df.at[idx, "Telefono"] = telefono
     df.at[idx, "Estado"] = "Repositorio creado"
     df.at[idx, "Repositorio_GitHub"] = url
     df.at[idx, "Codex_Task"] = str(archivos_codex["codex_task"])
     df.at[idx, "Restaurant_JSON"] = str(archivos_codex["restaurant_json"])
+    df["Telefono"] = df["Telefono"].astype("object")
     guardar_excel(df, ARCHIVO_EXCEL)
+    try:
+        from generar_demo import sincronizar_datos_demo_excel
+
+        sincronizar_datos_demo_excel(id_prospecto, ARCHIVO_EXCEL)
+    except Exception as exc:
+        print(f"Aviso: no se pudo sincronizar restaurant.json con Excel: {exc}")
 
     print("Demo creada:")
     print(carpeta_demo)
