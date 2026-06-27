@@ -23,8 +23,9 @@ Menú disponible:
 4. Cambiar estado
 5. Agregar link de demo
 6. Generar demo para un prospecto
-7. Exportar lista filtrada
-8. Salir
+7. Generar demos en lote
+8. Exportar lista filtrada
+9. Salir
 
 ## Buscar prospectos
 
@@ -103,6 +104,7 @@ Estados disponibles:
 - Contactado
 - Respondió
 - Interesado
+- Demo creada
 - Demo enviada
 - Cotización enviada
 - Cerrado
@@ -133,6 +135,49 @@ Ejemplos de carpeta generada:
 Si ya existe una carpeta, crea una nueva con sufijo, por ejemplo `quilombo-web-2`.
 
 La herramienta intenta reemplazar textos básicos en `index.html`, `App.jsx` y `App.css` cuando existan. También guarda la ruta generada en la columna `Demo` del Excel.
+
+## Generar demos en lote
+
+Desde `python main.py`, elige **7. Generar demos en lote**. El sistema muestra únicamente prospectos que cumplen estas condiciones:
+
+- Prioridad `Alta`
+- Estado `Pendiente` o `Contactado`
+- Columna `Demo` vacía
+
+La tabla muestra las columnas `ID`, `Nombre`, `Nicho`, `Telefono`, `Rating`, `Resenas` y `Direccion`. Después escribe varios IDs separados por coma, por ejemplo:
+
+```text
+201,205,208,214
+```
+
+Para cada ID seleccionado, la herramienta:
+
+1. Copia la plantilla base desde:
+
+   ```text
+   C:\Users\carrera\.vscode\codigos\Pagina Web\Plantillas\Restaurante-web
+   ```
+
+2. Crea la demo dentro de:
+
+   ```text
+   C:\Users\carrera\.vscode\codigos\Pagina Web\Clientes
+   ```
+
+3. Genera `prompt_codex.txt` personalizado y `restaurant.json` con los datos del negocio.
+4. Actualiza inmediatamente el Excel después de cada demo creada, guardando la ruta en `Demo` y cambiando `Estado` a `Demo creada`.
+5. Si una carpeta ya existe, no la sobrescribe: crea versiones como `nombre-web-2`, `nombre-web-3`, etc.
+6. Si una demo falla, continúa con las demás y muestra el error al final.
+
+Al terminar, muestra un resumen con demos creadas, demos fallidas, ruta de cada carpeta y ruta de cada `prompt_codex.txt`.
+
+Flujo rápido:
+
+```text
+python main.py
+→ Generar demos en lote
+→ escribir IDs separados por coma
+```
 
 ## prompt_codex.txt
 

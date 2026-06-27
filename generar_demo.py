@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 from pathlib import Path
@@ -16,6 +17,13 @@ PLACEHOLDERS = {
     "DIRECCION_RESTAURANTE": "Direccion",
     "NICHO_RESTAURANTE": "Nicho",
 }
+
+
+def demo_vacia(valor):
+    if valor is None:
+        return True
+    texto = str(valor).strip()
+    return not texto or texto.lower() in {"nan", "none", "null"}
 
 
 def elegir_prospecto(id_prospecto=None, archivo=ARCHIVO_EXCEL):
@@ -119,6 +127,20 @@ def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENT
         index.write_text(texto, encoding="utf-8")
 
     (destino / "prompt_codex.txt").write_text(crear_prompt(prospecto), encoding="utf-8")
+    datos_restaurante = {
+        "id": str(prospecto.get("ID", "")),
+        "nombre": str(prospecto.get("Nombre", "")),
+        "nicho": str(prospecto.get("Nicho", "")),
+        "telefono": str(prospecto.get("Telefono", "")),
+        "rating": str(prospecto.get("Rating", "")),
+        "resenas": str(prospecto.get("Resenas", "")),
+        "direccion": str(prospecto.get("Direccion", "")),
+        "google_maps": str(prospecto.get("Google_Maps", "")),
+        "demo": str(destino),
+    }
+    (destino / "restaurant.json").write_text(
+        json.dumps(datos_restaurante, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     for img in ["hero.jpg", "logo.png", "galeria1.jpg", "galeria2.jpg", "galeria3.jpg"]:
         placeholder = destino / "public" / img
         placeholder.parent.mkdir(exist_ok=True)
@@ -127,10 +149,41 @@ def generar_demo(id_prospecto=None, plantilla=PLANTILLA_DEFAULT, clientes=CLIENT
 
     idx = df[df["ID"].astype(str) == str(prospecto["ID"])].index[0]
     df.at[idx, "Demo"] = str(destino)
+    df.at[idx, "Estado"] = "Demo creada"
     guardar_excel(df, archivo)
     print(f"Demo creada en: {destino}")
     print(f"Prompt creado en: {destino / 'prompt_codex.txt'}")
     return destino
+
+
+def prospectos_para_demo_lote(df):
+    demo = df["Demo"].apply(demo_vacia)
+    prioridad = df["Prioridad"].astype(str).str.strip().str.lower() == "alta"
+    estados = df["Estado"].astype(str).str.strip().str.lower().isin({"pendiente", "contactado"})
+    return df[prioridad & estados & demo]
+
+
+def generar_demos_lote(ids, plantilla=PLANTILLA_DEFAULT, clientes=CLIENTES_DEFAULT, archivo=ARCHIVO_EXCEL):
+    creadas = []
+    fallidas = []
+    for id_prospecto in ids:
+        id_limpio = str(id_prospecto).strip()
+        if not id_limpio:
+            continue
+        try:
+            destino = generar_demo(id_limpio, plantilla=plantilla, clientes=clientes, archivo=archivo)
+            if destino:
+                creadas.append({
+                    "id": id_limpio,
+                    "carpeta": Path(destino),
+                    "prompt": Path(destino) / "prompt_codex.txt",
+                })
+            else:
+                fallidas.append({"id": id_limpio, "error": "No se pudo crear la demo."})
+        except Exception as exc:
+            fallidas.append({"id": id_limpio, "error": str(exc)})
+            print(f"Error al crear demo para ID {id_limpio}: {exc}")
+    return {"creadas": creadas, "fallidas": fallidas}
 
 
 if __name__ == "__main__":
