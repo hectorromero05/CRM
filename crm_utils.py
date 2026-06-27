@@ -15,7 +15,7 @@ COLUMNAS = [
 ]
 
 ESTADOS = [
-    "Pendiente", "Contactado", "Respondió", "Interesado", "Demo enviada",
+    "Pendiente", "Contactado", "Respondió", "Interesado", "Demo creada", "Demo enviada",
     "Cotización enviada", "Cerrado", "Perdido",
 ]
 
@@ -69,10 +69,11 @@ def parse_int(valor):
 def asegurar_excel(ruta=ARCHIVO_EXCEL):
     if not os.path.exists(ruta):
         pd.DataFrame(columns=COLUMNAS).to_excel(ruta, index=False)
-    df = pd.read_excel(ruta)
+    df = pd.read_excel(ruta, dtype={"Demo": object})
     for columna in COLUMNAS:
         if columna not in df.columns:
             df[columna] = ""
+    df["Demo"] = df["Demo"].fillna("").astype(object)
     return df[COLUMNAS]
 
 
@@ -81,6 +82,7 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
     for columna in COLUMNAS:
         if columna not in df.columns:
             df[columna] = ""
+    df["Demo"] = df["Demo"].fillna("").astype(object)
     df = df[COLUMNAS]
     df.to_excel(ruta, index=False)
 

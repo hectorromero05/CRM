@@ -1,6 +1,6 @@
 from buscar_maps import buscar_prospectos, generar_busquedas
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
-from generar_demo import generar_demo
+from generar_demo import generar_demo, generar_demos_lote, prospectos_para_demo_lote
 
 
 def ver(df=None, filtro=None):
@@ -57,6 +57,47 @@ def agregar_demo():
     print("Demo guardada.")
 
 
+def generar_demos_en_lote():
+    df = asegurar_excel()
+    candidatos = prospectos_para_demo_lote(df)
+    columnas = ["ID", "Nombre", "Nicho", "Telefono", "Rating", "Resenas", "Direccion"]
+    if candidatos.empty:
+        print("No hay prospectos de prioridad alta, estado Pendiente/Contactado y sin demo todavía.")
+        return
+
+    print("Prospectos disponibles para generar demos en lote:")
+    print(candidatos[columnas].to_string(index=False))
+    ids_txt = input("IDs separados por coma (ejemplo: 201,205,208,214): ").strip()
+    ids = [idp.strip() for idp in ids_txt.split(",") if idp.strip()]
+    if not ids:
+        print("No se ingresaron IDs.")
+        return
+
+    ids_validos = set(candidatos["ID"].astype(str))
+    ids_filtrados = []
+    omitidos = []
+    for idp in ids:
+        if idp in ids_validos:
+            ids_filtrados.append(idp)
+        else:
+            omitidos.append({"id": idp, "error": "No cumple filtros o no existe."})
+
+    resultado = generar_demos_lote(ids_filtrados)
+    creadas = resultado["creadas"]
+    fallidas = omitidos + resultado["fallidas"]
+
+    print("\nResumen de generación en lote")
+    print(f"Demos creadas: {len(creadas)}")
+    for demo in creadas:
+        print(f"- ID {demo['id']}")
+        print(f"  Carpeta: {demo['carpeta']}")
+        print(f"  Prompt: {demo['prompt']}")
+
+    print(f"Demos fallidas: {len(fallidas)}")
+    for fallo in fallidas:
+        print(f"- ID {fallo['id']}: {fallo['error']}")
+
+
 def exportar_filtrada():
     df = asegurar_excel()
     prioridad = input("Prioridad a exportar (Alta/Media/Baja, Enter = todas): ").strip()
@@ -81,8 +122,9 @@ CRM Restaurantes
 4. Cambiar estado
 5. Agregar link de demo
 6. Generar demo para un prospecto
-7. Exportar lista filtrada
-8. Salir
+7. Generar demos en lote
+8. Exportar lista filtrada
+9. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
@@ -91,8 +133,9 @@ CRM Restaurantes
         elif op == "4": cambiar_estado()
         elif op == "5": agregar_demo()
         elif op == "6": generar_demo()
-        elif op == "7": exportar_filtrada()
-        elif op == "8": break
+        elif op == "7": generar_demos_en_lote()
+        elif op == "8": exportar_filtrada()
+        elif op == "9": break
         else: print("Opción no válida.")
 
 
