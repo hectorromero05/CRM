@@ -33,8 +33,9 @@ GOOGLE_DOMINIOS_IGNORADOS = (
     "business.google.com",
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
-RESENAS_REGEX = re.compile(
-    r"(?i)(?:\(?\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)?\s*(?:reseñas|opiniones|reviews)\b|\(\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)|\b(\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3})+)\b)"
+RESENAS_RATING_REGEX = re.compile(r"\b[0-5](?:[.,]\d)?\b.*?\(([\d,.]+)\)")
+RESENAS_SECUNDARIAS_REGEX = re.compile(
+    r"(?i)(?:\(\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)|\b(\d{1,3}(?:[,.]\d{3})+|\d+)\s*(?:reseñas|opiniones|reviews)\b)"
 )
 
 
@@ -237,31 +238,82 @@ def extraer_rating(page):
 
 def limpiar_numero_resenas(texto):
     texto = limpiar(texto)
-    if not texto or len(texto) > 80:
+    if not texto:
+        return 0
+    texto = texto.strip().strip("()")
+    texto = texto.replace(",", "").replace(".", "")
+    if not texto.isdigit():
+        return 0
+    try:
+        return int(texto)
+    except Exception:
+        return 0
+
+
+def _texto_corto_resenas(texto):
+    texto = limpiar(texto)
+    if not texto or len(texto) > 120:
         return ""
-    match = RESENAS_REGEX.search(texto)
+    return texto
+
+
+def _extraer_resenas_rating_parentesis(texto):
+    match = RESENAS_RATING_REGEX.search(texto)
     if not match:
-        return ""
-    numero = next((grupo for grupo in match.groups() if grupo), "")
-    if not numero:
-        return ""
-    return re.sub(r"\D+", "", numero)
+        return 0
+    return limpiar_numero_resenas(match.group(1))
 
 
-def _resenas_desde_elementos(page, selector, usar_aria=False, limite=80):
+def _extraer_resenas_secundarias(texto):
+    # Evita tratar ratings decimales sueltos como reseñas: solo acepta números entre
+    # paréntesis o números acompañados por reseñas/opiniones/reviews.
+    for match in RESENAS_SECUNDARIAS_REGEX.finditer(texto):
+        numero = next((grupo for grupo in match.groups() if grupo), "")
+        if not numero:
+            continue
+        inicio = match.start()
+        contexto_previo = texto[max(0, inicio - 2):inicio]
+        if "$" in contexto_previo:
+            continue
+        resenas = limpiar_numero_resenas(numero)
+        if resenas:
+            return resenas
+    return 0
+
+
+def _iter_textos_cortos_resenas(page, selector, atributo=None, limite=120):
     try:
         elementos = page.locator(selector).all()[:limite]
     except Exception:
-        return ""
+        return
     for elemento in elementos:
         try:
-            texto = limpiar(elemento.get_attribute("aria-label") if usar_aria else elemento.inner_text(timeout=300))
+            if hasattr(elemento, "is_visible") and not elemento.is_visible(timeout=200):
+                continue
+        except Exception:
+            pass
+        try:
+            texto = elemento.get_attribute(atributo, timeout=300) if atributo else elemento.inner_text(timeout=300)
+        except TypeError:
+            try:
+                texto = elemento.get_attribute(atributo) if atributo else elemento.inner_text(timeout=300)
+            except Exception:
+                texto = ""
         except Exception:
             texto = ""
-        resenas = limpiar_numero_resenas(texto)
+        texto = _texto_corto_resenas(texto)
+        if texto:
+            yield texto
+
+
+def _buscar_resenas_en_textos(textos, extractor):
+    for texto in textos:
+        print(f"Texto candidato reseñas: {texto}")
+        resenas = extractor(texto)
         if resenas:
+            print(f"Reseñas extraídas: {resenas}")
             return resenas
-    return ""
+    return 0
 
 
 def extraer_resenas(page):
@@ -269,43 +321,30 @@ def extraer_resenas(page):
     Extrae el número de reseñas sin leer el texto completo de la página.
 
     Pruebas manuales sugeridas:
+    - Abrir un negocio de Google Maps con "4.9 ★★★★★ (110) · $200-600" y verificar Resenas=110.
     - Abrir un negocio de Google Maps con "123 reseñas" visible y verificar Resenas=123.
     - Abrir uno con "(1,234)" o "1.234 opiniones" y verificar Resenas=1234.
     - Abrir uno en inglés con "123 reviews" y verificar Resenas=123.
     """
-    selectores_contexto = [
-        'button[aria-label*="reseñas" i]',
-        'button[aria-label*="opiniones" i]',
-        'button[aria-label*="reviews" i]',
-        'span[aria-label*="reseñas" i]',
-        'span[aria-label*="opiniones" i]',
-        'span[aria-label*="reviews" i]',
-        'button:has-text("reseñas")',
-        'button:has-text("opiniones")',
-        'button:has-text("reviews")',
-        'span:has-text("reseñas")',
-        'span:has-text("opiniones")',
-        'span:has-text("reviews")',
-    ]
-    for selector in selectores_contexto:
-        resenas = _resenas_desde_elementos(page, selector, usar_aria="aria-label" in selector, limite=30)
-        if resenas:
-            return resenas
+    selectores_texto = ["span", "button", "div"]
+    selectores_aria = ["span[aria-label]", "button[aria-label]", "div[aria-label]"]
 
-    for selector in [
-        '[aria-label*="reseñas" i]',
-        '[aria-label*="opiniones" i]',
-        '[aria-label*="reviews" i]',
-    ]:
-        resenas = _resenas_desde_elementos(page, selector, usar_aria=True, limite=80)
-        if resenas:
-            return resenas
+    textos_visibles = []
+    for selector in selectores_texto:
+        textos_visibles.extend(_iter_textos_cortos_resenas(page, selector, limite=160))
+    textos_aria = []
+    for selector in selectores_aria:
+        textos_aria.extend(_iter_textos_cortos_resenas(page, selector, atributo="aria-label", limite=160))
 
-    for selector in ["button", "span", "div[role='button']", "a"]:
-        resenas = _resenas_desde_elementos(page, selector, usar_aria=False, limite=120)
-        if resenas:
-            return resenas
-    return ""
+    textos = textos_visibles + textos_aria
+    resenas = _buscar_resenas_en_textos(textos, _extraer_resenas_rating_parentesis)
+    if resenas:
+        return resenas
+
+    resenas = _buscar_resenas_en_textos(textos, _extraer_resenas_secundarias)
+    if resenas:
+        return resenas
+    return 0
 
 
 def extraer_direccion(page):
