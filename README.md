@@ -44,6 +44,14 @@ vercel login
 
 ## Ejecutar CRM
 
+### Interfaz gráfica (Streamlit)
+
+```bash
+streamlit run app.py
+```
+
+### Consola
+
 ```bash
 python main.py
 ```
@@ -59,6 +67,22 @@ Menú disponible:
 7. Generar demos en lote
 8. Exportar lista filtrada
 9. Salir
+
+## Interfaz gráfica con Streamlit
+
+La nueva interfaz web mantiene la consola intacta y permite operar el CRM desde el navegador. Incluye:
+
+- Buscar prospectos por nichos, zonas y máximo por búsqueda.
+- Ver `prospectos_restaurantes.xlsx` en una tabla interactiva con filtros por prioridad, estado, web y nicho.
+- Revisar métricas de total de prospectos, prioridad alta, sin página web, contactados, interesados y cerrados.
+- Generar demo completa para un prospecto seleccionado por ID o nombre.
+- Exportar Excel de todos los prospectos, prioridad alta, sin página web o contactados.
+- Guardar configuración local en `config.json` para plantilla React, carpeta Clientes, GitHub y Vercel.
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 ## Generar demo completa
 
