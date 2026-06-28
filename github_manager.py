@@ -27,7 +27,7 @@ def _validar_gh():
         return False
     auth = _ejecutar(["gh", "auth", "status"], check=False)
     if auth.returncode != 0:
-        print("GitHub CLI no está autenticado. Ejecuta: gh auth login")
+        print("Debes iniciar sesión con: gh auth login")
         print(_mensaje_error(auth))
         return False
     return True
@@ -93,7 +93,18 @@ def _commit_cambios_codex(carpeta_demo):
         return False, f"Error al crear commit de archivos Codex: {_mensaje_error(commit)}"
     return True, ""
 
-def crear_repo_demo(id_prospecto):
+def _nombre_repo_disponible(usuario, base):
+    if not _repo_existe(usuario, base):
+        return base
+    i = 2
+    while True:
+        candidato = f"{base}-{i}"
+        if not _repo_existe(usuario, candidato):
+            return candidato
+        i += 1
+
+
+def crear_repo_demo(id_prospecto, permitir_alternativo=False):
     """Crea un repositorio público en GitHub para la demo de un prospecto."""
     if not _validar_git() or not _validar_gh():
         return None
@@ -128,9 +139,13 @@ def crear_repo_demo(id_prospecto):
         return None
 
     if _repo_existe(usuario, nombre_repo):
-        print(f"El repositorio ya existe: https://github.com/{usuario}/{nombre_repo}")
-        print("Operación cancelada.")
-        return None
+        if permitir_alternativo:
+            nombre_repo = _nombre_repo_disponible(usuario, nombre_repo)
+            print(f"El repositorio base ya existe. Usando nombre alternativo: {nombre_repo}")
+        else:
+            print(f"El repositorio ya existe: https://github.com/{usuario}/{nombre_repo}")
+            print("Operación cancelada.")
+            return None
 
     archivos_codex = asegurar_archivos_codex(carpeta_demo, prospecto)
 

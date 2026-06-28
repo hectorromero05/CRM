@@ -1,8 +1,7 @@
 from buscar_maps import buscar_prospectos, generar_busquedas
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
-from generar_demo import generar_demo, generar_demos_lote, prospectos_para_demo_lote
-from github_manager import mostrar_prospectos_para_repo
-from codex_manager import preparar_tarea_codex_online
+from generar_demo import generar_demos_lote, prospectos_para_demo_lote
+from demo_completa import mostrar_prospectos_para_demo_completa
 
 
 def ver(df=None, filtro=None):
@@ -123,12 +122,10 @@ CRM Restaurantes
 3. Ver prospectos de prioridad alta
 4. Cambiar estado
 5. Agregar link de demo
-6. Generar demo para un prospecto
+6. Generar demo completa
 7. Generar demos en lote
 8. Exportar lista filtrada
-9. Crear repositorio GitHub
-10. Preparar tarea para Codex Online
-11. Salir
+9. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
@@ -136,12 +133,10 @@ CRM Restaurantes
         elif op == "3": ver(filtro="Prioridad == 'Alta'")
         elif op == "4": cambiar_estado()
         elif op == "5": agregar_demo()
-        elif op == "6": generar_demo()
+        elif op == "6": mostrar_prospectos_para_demo_completa()
         elif op == "7": generar_demos_en_lote()
         elif op == "8": exportar_filtrada()
-        elif op == "9": mostrar_prospectos_para_repo()
-        elif op == "10": preparar_tarea_codex_online()
-        elif op == "11": break
+        elif op == "9": break
         else: print("Opción no válida.")
 
 
