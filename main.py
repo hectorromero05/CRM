@@ -1,4 +1,4 @@
-from buscar_maps import buscar_prospectos, generar_busquedas
+from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas, imprimir_resumen_prospecto
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demos_lote, prospectos_para_demo_lote
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
@@ -25,6 +25,25 @@ def buscar_nuevos():
     maximo = input("Máximo por búsqueda (Enter = 40): ").strip()
     maximo = int(maximo) if maximo.isdigit() else 40
     buscar_prospectos(generar_busquedas(nichos, zonas), maximo)
+
+
+def agregar_prospecto_maps_url_cli():
+    url = input("Link de Google Maps del negocio: ").strip()
+    if not url:
+        print("No se ingresó ningún link.")
+        return
+    try:
+        resultado = agregar_prospecto_desde_maps_url(url)
+    except Exception as exc:
+        print(f"No se pudo agregar el prospecto: {exc}")
+        return
+    if resultado.get("nuevo"):
+        print(f"Prospecto nuevo guardado con ID {resultado.get('id')}.")
+    elif resultado.get("actualizado"):
+        print(f"Prospecto existente actualizado con ID {resultado.get('id')}.")
+    else:
+        print(f"Prospecto existente sin cambios con ID {resultado.get('id')}.")
+    imprimir_resumen_prospecto(resultado.get("registro", {}))
 
 
 def cambiar_estado():
@@ -139,8 +158,9 @@ CRM Restaurantes
 6. Crear proyecto del cliente
 7. Finalizar proyecto
 8. Generar demos en lote
-9. Configuración
-10. Salir
+9. Agregar prospecto por link de Google Maps
+10. Configuración
+11. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
@@ -151,8 +171,9 @@ CRM Restaurantes
         elif op == "6": crear_proyecto_cliente_cli()
         elif op == "7": finalizar_proyecto_cli()
         elif op == "8": generar_demos_en_lote()
-        elif op == "9": print("Configura rutas y credenciales desde app.py o config.json.")
-        elif op == "10": break
+        elif op == "9": agregar_prospecto_maps_url_cli()
+        elif op == "10": print("Configura rutas y credenciales desde app.py o config.json.")
+        elif op == "11": break
         else: print("Opción no válida.")
 
 
