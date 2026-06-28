@@ -1,11 +1,27 @@
 import re
 import time
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote, urlparse
+
+import pandas as pd
 
 from playwright.sync_api import sync_playwright
 
-from crm_utils import ARCHIVO_EXCEL, NICHOS, ZONAS, asegurar_excel, clasificar_prioridad, fusionar_registro, guardar_excel, tiene_web
+from crm_utils import (
+    ARCHIVO_EXCEL,
+    NICHOS,
+    ZONAS,
+    asegurar_excel,
+    clasificar_prioridad,
+    encontrar_duplicado,
+    fusionar_registro,
+    guardar_excel,
+    normalizar_texto,
+    preparar_registro,
+    siguiente_id,
+    tiene_web,
+)
 
 MAX_POR_BUSQUEDA = 40
 GOOGLE_DOMINIOS_IGNORADOS = (
@@ -17,6 +33,102 @@ GOOGLE_DOMINIOS_IGNORADOS = (
     "business.google.com",
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
+
+
+def normalizar_nombre(valor):
+    return normalizar_texto(valor)
+
+
+def _valor_vacio(valor):
+    return not str(valor or "").strip()
+
+
+def _actualizar_datos_faltantes(df, idx, registro):
+    for columna, valor in registro.items():
+        if columna in df.columns and str(valor or "").strip() and _valor_vacio(df.at[idx, columna]):
+            df.at[idx, columna] = valor
+    df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
+    df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
+    return df
+
+
+def extraer_registro_desde_pagina(page, google_maps_url, nicho="Google Maps URL"):
+    nombre = extraer_nombre(page)
+    if not nombre:
+        raise ValueError("No se pudo extraer el nombre del negocio desde Google Maps.")
+    registro = {
+        "Nombre": nombre,
+        "Nicho": nicho,
+        "Telefono": extraer_telefono(page),
+        "Sitio_web": extraer_sitio_web(page),
+        "Rating": extraer_rating(page),
+        "Resenas": extraer_resenas(page),
+        "Direccion": extraer_direccion(page),
+        "Horario": extraer_horario(page),
+        "Categoria": extraer_categoria(page),
+        "Google_Maps": google_maps_url,
+        "Notas": "",
+        "Fecha_busqueda": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
+    registro["Prioridad"] = clasificar_prioridad(registro)
+    return registro
+
+
+def agregar_prospecto_desde_maps_url(url, archivo=ARCHIVO_EXCEL, headless=False, actualizar_faltantes=None):
+    url = str(url or "").strip()
+    if not url:
+        raise ValueError("Debes ingresar un link de Google Maps.")
+
+    archivo = Path(archivo)
+    df = asegurar_excel(archivo)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        page = browser.new_page(viewport={"width": 1366, "height": 768})
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(3)
+            final_url = page.url or url
+            if "google" not in final_url and "goo.gl" not in final_url and "maps.app" not in final_url:
+                raise ValueError(f"El link redirigió fuera de Google Maps: {final_url}")
+            registro = extraer_registro_desde_pagina(page, final_url)
+        except Exception as exc:
+            raise RuntimeError(f"No se pudo abrir o leer el link de Google Maps: {exc}") from exc
+        finally:
+            browser.close()
+
+    idx = encontrar_duplicado(df, registro)
+    if idx is not None:
+        existente_id = df.at[idx, "ID"]
+        print("Este prospecto ya existe")
+        print(f"ID: {existente_id}")
+        if actualizar_faltantes is None:
+            respuesta = input("¿Deseas actualizar los datos faltantes? (s/N): ").strip().lower()
+            actualizar_faltantes = respuesta in {"s", "si", "sí", "y", "yes"}
+        if actualizar_faltantes:
+            df = _actualizar_datos_faltantes(df, idx, registro)
+            guardar_excel(df, archivo)
+        return {"nuevo": False, "actualizado": bool(actualizar_faltantes), "id": existente_id, "registro": df.loc[idx].to_dict(), "archivo": str(archivo)}
+
+    registro = preparar_registro(registro, siguiente_id(df))
+    df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
+    guardar_excel(df, archivo)
+    return {"nuevo": True, "actualizado": False, "id": registro["ID"], "registro": registro, "archivo": str(archivo)}
+
+
+def imprimir_resumen_prospecto(registro):
+    print("\nResumen del prospecto")
+    print(f"Nombre: {registro.get('Nombre', '')}")
+    print(f"Teléfono: {registro.get('Telefono', '')}")
+    print(f"Web: {registro.get('Tiene_web') or tiene_web(registro.get('Sitio_web'))}")
+    print(f"Rating: {registro.get('Rating', '')}")
+    print(f"Reseñas: {registro.get('Resenas', '')}")
+    print(f"Prioridad: {registro.get('Prioridad') or clasificar_prioridad(registro)}")
+    print(f"Dirección: {registro.get('Direccion', '')}")
 
 
 def limpiar(texto):

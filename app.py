@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from buscar_maps import buscar_prospectos, generar_busquedas
+from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
 
@@ -81,7 +81,7 @@ st.title("CRM Restaurantes")
 
 section = st.sidebar.radio(
     "Secciones",
-    ["Dashboard", "Buscar prospectos", "Ver prospectos", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
+    ["Dashboard", "Buscar prospectos", "Agregar por Google Maps", "Ver prospectos", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
 )
 
 if section == "Dashboard":
@@ -133,6 +133,51 @@ elif section == "Buscar prospectos":
             st.error(f"No se pudo completar la búsqueda: {exc}")
         with st.expander("Ver detalle de ejecución"):
             st.code(output.getvalue() or "Sin salida de consola.")
+
+elif section == "Agregar por Google Maps":
+    st.header("Agregar prospecto por link de Google Maps")
+    maps_url = st.text_input("Link de Google Maps", placeholder="https://maps.app.goo.gl/... o https://www.google.com/maps/place/...")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        headless_link = st.checkbox("Modo invisible", value=True, key="maps_link_headless")
+    with col2:
+        actualizar_faltantes = st.checkbox("Actualizar datos faltantes si ya existe", value=False)
+
+    if st.button("Agregar prospecto por link", type="primary"):
+        if not maps_url.strip():
+            st.warning("Pega un link de Google Maps para continuar.")
+        else:
+            before = len(load_prospectos())
+            try:
+                with st.spinner("Abriendo Google Maps y extrayendo datos del negocio..."):
+                    resultado = agregar_prospecto_desde_maps_url(
+                        maps_url,
+                        archivo=ARCHIVO_EXCEL,
+                        headless=headless_link,
+                        actualizar_faltantes=actualizar_faltantes,
+                    )
+                registro = resultado.get("registro", {})
+                if resultado.get("nuevo"):
+                    st.success(f"Prospecto nuevo guardado con ID {resultado.get('id')}.")
+                elif resultado.get("actualizado"):
+                    st.info(f"Este prospecto ya existe. ID {resultado.get('id')}. Se actualizaron datos faltantes.")
+                else:
+                    st.info(f"Este prospecto ya existe. ID {resultado.get('id')}.")
+
+                st.subheader("Resumen")
+                st.write({
+                    "Nombre": registro.get("Nombre", ""),
+                    "Teléfono": registro.get("Telefono", ""),
+                    "Web": registro.get("Tiene_web", ""),
+                    "Rating": registro.get("Rating", ""),
+                    "Reseñas": registro.get("Resenas", ""),
+                    "Prioridad": registro.get("Prioridad", ""),
+                    "Dirección": registro.get("Direccion", ""),
+                })
+                after_df = load_prospectos()
+                st.caption(f"Registros antes: {before}. Registros ahora: {len(after_df)}.")
+            except Exception as exc:
+                st.error(f"No se pudo agregar el prospecto desde Google Maps: {exc}")
 
 elif section == "Ver prospectos":
     st.header("Ver prospectos")
