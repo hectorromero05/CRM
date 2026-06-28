@@ -34,6 +34,7 @@ GOOGLE_DOMINIOS_IGNORADOS = (
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
 RESENAS_PARENTESIS_REGEX = re.compile(r"\(([\d\.,]+)\)")
+RESENAS_TEXTO_REGEX = re.compile(r"([\d\.,]+)\s*(?:reviews?|reseñas|resenas|opiniones)", re.I)
 
 
 def normalizar_nombre(valor):
@@ -324,55 +325,64 @@ def limpiar_numero_resenas(texto):
         return 0
 
 
-def _texto_corto_resenas(texto):
+def _texto_corto_resenas(texto, limite=160):
     texto = limpiar(texto)
-    if not texto or len(texto) > 120:
+    if not texto or len(texto) >= limite:
         return ""
     return texto
 
 
-def _extraer_resenas_parentesis(texto):
-    match = RESENAS_PARENTESIS_REGEX.search(texto or "")
-    if not match:
-        print("Regex encontrada:\n")
+def _extraer_resenas_desde_texto(texto):
+    texto = _texto_corto_resenas(texto)
+    if not texto:
         return 0
-    print(f"Regex encontrada:\n{match.group(0)}")
-    return limpiar_numero_resenas(match.group(1))
+    for regex in (RESENAS_TEXTO_REGEX, RESENAS_PARENTESIS_REGEX):
+        match = regex.search(texto)
+        if match:
+            return limpiar_numero_resenas(match.group(1))
+    return 0
 
 
-def _iter_textos_parentesis_visibles(page, limite=160):
-    patron = re.compile(r"^\s*\([\d\.,]+\)\s*$")
+def _iter_textos_resenas_visibles(page):
     try:
-        elementos = page.locator("span, button, div[role='button']").all()[:limite]
+        valores = page.locator(
+            "span:visible, button:visible, a:visible, div[role='button']:visible, "
+            "[role='img']:visible, [aria-label]:visible"
+        ).evaluate_all(
+            r"""
+            (nodes) => {
+                const limpiar = (value) => (value || '').replace(/\s+/g, ' ').trim();
+                const valores = [];
+                for (const node of nodes) {
+                    const texto = limpiar(node.innerText || node.textContent || '');
+                    const aria = limpiar(node.getAttribute && node.getAttribute('aria-label'));
+                    for (const valor of [texto, aria]) {
+                        if (valor && valor.length < 160) valores.push(valor);
+                    }
+                }
+                return [...new Set(valores)];
+            }
+            """
+        )
     except Exception:
         return
-    for elemento in elementos:
-        try:
-            if hasattr(elemento, "is_visible") and not elemento.is_visible(timeout=200):
-                continue
-        except Exception:
-            pass
-        try:
-            texto = elemento.inner_text(timeout=300)
-        except Exception:
-            texto = ""
+    palabras_resenas = re.compile(r"reviews?|reseñas|resenas|opiniones", re.I)
+    for texto in valores:
         texto = _texto_corto_resenas(texto)
-        if texto and patron.search(texto):
+        if texto and (RESENAS_PARENTESIS_REGEX.search(texto) or palabras_resenas.search(texto)):
             yield texto
 
 
 def extraer_resenas(page):
-    """Extrae reseñas desde el contenedor del rating o elementos pequeños con paréntesis."""
+    """Extrae reseñas desde textos/aria-labels cortos visibles detectables con debug_reviews.py."""
     rating, texto_rating = _obtener_rating_y_texto(page)
-    print(f"Texto rating encontrado:\n{texto_rating}")
-    resenas = _extraer_resenas_parentesis(texto_rating)
-    if resenas:
-        print(f"Reseñas:\n{resenas}")
-        return resenas
-
-    for texto in _iter_textos_parentesis_visibles(page):
-        print(f"Texto rating encontrado:\n{texto}")
-        resenas = _extraer_resenas_parentesis(texto)
+    candidatos = [texto_rating, *_iter_textos_resenas_visibles(page)]
+    for texto in candidatos:
+        texto = _texto_corto_resenas(texto)
+        if not texto:
+            continue
+        print(f"Texto reseñas encontrado:\n{texto}")
+        resenas = _extraer_resenas_desde_texto(texto)
         if resenas:
             print(f"Reseñas:\n{resenas}")
             return resenas
