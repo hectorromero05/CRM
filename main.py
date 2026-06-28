@@ -1,7 +1,7 @@
 from buscar_maps import buscar_prospectos, generar_busquedas
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demos_lote, prospectos_para_demo_lote
-from demo_completa import mostrar_prospectos_para_demo_completa
+from project_factory import crear_proyecto_cliente, finalizar_proyecto
 
 
 def ver(df=None, filtro=None):
@@ -56,6 +56,20 @@ def agregar_demo():
     df.loc[mask, "Estado"] = "Demo enviada"
     guardar_excel(df)
     print("Demo guardada.")
+
+
+def crear_proyecto_cliente_cli():
+    df = asegurar_excel()
+    ver(df)
+    idp = input("ID del prospecto para crear proyecto del cliente: ").strip()
+    crear_proyecto_cliente(idp)
+
+
+def finalizar_proyecto_cli():
+    df = asegurar_excel()
+    ver(df)
+    idp = input("ID del prospecto para finalizar proyecto: ").strip()
+    finalizar_proyecto(idp)
 
 
 def generar_demos_en_lote():
@@ -119,24 +133,26 @@ def menu():
 CRM Restaurantes
 1. Buscar nuevos prospectos
 2. Ver prospectos
-3. Ver prospectos de prioridad alta
+3. Prospectos Alta prioridad
 4. Cambiar estado
-5. Agregar link de demo
-6. Generar demo completa
-7. Generar demos en lote
-8. Exportar lista filtrada
-9. Salir
+5. Exportar Excel
+6. Crear proyecto del cliente
+7. Finalizar proyecto
+8. Generar demos en lote
+9. Configuración
+10. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
         elif op == "2": ver()
         elif op == "3": ver(filtro="Prioridad == 'Alta'")
         elif op == "4": cambiar_estado()
-        elif op == "5": agregar_demo()
-        elif op == "6": mostrar_prospectos_para_demo_completa()
-        elif op == "7": generar_demos_en_lote()
-        elif op == "8": exportar_filtrada()
-        elif op == "9": break
+        elif op == "5": exportar_filtrada()
+        elif op == "6": crear_proyecto_cliente_cli()
+        elif op == "7": finalizar_proyecto_cli()
+        elif op == "8": generar_demos_en_lote()
+        elif op == "9": print("Configura rutas y credenciales desde app.py o config.json.")
+        elif op == "10": break
         else: print("Opción no válida.")
 
 
