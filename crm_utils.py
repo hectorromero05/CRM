@@ -10,9 +10,9 @@ ARCHIVO_EXCEL = "prospectos_restaurantes.xlsx"
 
 COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
-    "Direccion", "Horario", "Categoria", "Google_Maps", "Prioridad", "Estado", "Demo",
-    "Notas", "Fecha_busqueda", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
-    "Codex_Task", "Restaurant_JSON",
+    "Direccion", "Horario", "Categoria", "Google_Maps", "Posible_duplicado", "Prioridad",
+    "Estado", "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
+    "Codex_Task", "Restaurant_JSON", "Notas", "Fecha_busqueda",
 ]
 
 ESTADOS = [
@@ -95,6 +95,10 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
     ]:
         if columna in df.columns:
             df[columna] = df[columna].fillna("").astype("object")
+    for idx in df.index:
+        df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
+        df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
+    df = marcar_posibles_duplicados(df)
     df = df[COLUMNAS]
     df.to_excel(ruta, index=False)
 
@@ -115,17 +119,23 @@ def clasificar_prioridad(registro):
     telefono = bool(normalizar_telefono(registro.get("Telefono")))
     rating = parse_float(registro.get("Rating"))
     resenas = parse_int(registro.get("Resenas"))
-    if web in {"si", "sí"} or not telefono:
+
+    if web in {"si", "sí"}:
         return "Baja"
-    if rating >= 4.3 and resenas > 80:
+    if telefono and ((rating >= 4.3 and resenas >= 80) or (rating >= 4.0 and resenas > 200)):
         return "Alta"
-    return "Media"
+    if telefono and (rating > 0 or resenas > 0):
+        return "Media"
+    if not telefono and rating >= 4.3 and resenas >= 80:
+        return "Media"
+    return "Baja"
 
 
 def preparar_registro(datos, nuevo_id):
     registro = {col: datos.get(col, "") for col in COLUMNAS}
     registro["ID"] = datos.get("ID") or nuevo_id
     registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
+    registro["Posible_duplicado"] = registro.get("Posible_duplicado") or "no"
     registro["Prioridad"] = clasificar_prioridad(registro)
     registro["Estado"] = registro.get("Estado") or "Pendiente"
     registro["Fecha_busqueda"] = registro.get("Fecha_busqueda") or datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -138,28 +148,56 @@ def encontrar_duplicado(df, registro):
     maps = normalizar_texto(registro.get("Google_Maps"))
     direccion = normalizar_texto(registro.get("Direccion"))
     for idx, fila in df.iterrows():
-        if nombre and nombre == normalizar_texto(fila.get("Nombre")):
+        fila_maps = normalizar_texto(fila.get("Google_Maps"))
+        fila_telefono = normalizar_telefono(fila.get("Telefono"))
+        fila_nombre = normalizar_texto(fila.get("Nombre"))
+        fila_direccion = normalizar_texto(fila.get("Direccion"))
+        if maps and maps == fila_maps:
             return idx
-        if telefono and telefono == normalizar_telefono(fila.get("Telefono")):
+        if telefono and telefono == fila_telefono:
             return idx
-        if maps and maps == normalizar_texto(fila.get("Google_Maps")):
-            return idx
-        if direccion and direccion == normalizar_texto(fila.get("Direccion")):
+        if nombre and direccion and nombre == fila_nombre and direccion == fila_direccion:
             return idx
     return None
+
+
+def marcar_posibles_duplicados(df):
+    vistos = {}
+    posibles = set()
+    for idx, fila in df.iterrows():
+        claves = []
+        maps = normalizar_texto(fila.get("Google_Maps"))
+        telefono = normalizar_telefono(fila.get("Telefono"))
+        nombre = normalizar_texto(fila.get("Nombre"))
+        direccion = normalizar_texto(fila.get("Direccion"))
+        if maps:
+            claves.append(("maps", maps))
+        if telefono:
+            claves.append(("telefono", telefono))
+        if nombre and direccion:
+            claves.append(("nombre_direccion", nombre, direccion))
+        for clave in claves:
+            if clave in vistos:
+                posibles.update({idx, vistos[clave]})
+            else:
+                vistos[clave] = idx
+    df["Posible_duplicado"] = ["sí" if idx in posibles else "no" for idx in df.index]
+    return df
 
 
 def fusionar_registro(df, registro):
     idx = encontrar_duplicado(df, registro)
     if idx is None:
         registro = preparar_registro(registro, siguiente_id(df))
-        return pd.concat([df, pd.DataFrame([registro])], ignore_index=True), True
+        return marcar_posibles_duplicados(pd.concat([df, pd.DataFrame([registro])], ignore_index=True)), True
     for columna, valor in registro.items():
         if columna in df.columns and str(valor or "").strip() and not str(df.at[idx, columna] or "").strip():
             df.at[idx, columna] = valor
     df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
     df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
-    return df, False
+    if "Posible_duplicado" in df.columns:
+        df.at[idx, "Posible_duplicado"] = "no"
+    return marcar_posibles_duplicados(df), False
 
 
 def estilo_por_nicho(nicho):
