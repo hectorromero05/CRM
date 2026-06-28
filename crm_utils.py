@@ -93,6 +93,7 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
     for columna in COLUMNAS:
         if columna not in df.columns:
             df[columna] = ""
+    df["Resenas"] = pd.to_numeric(df["Resenas"], errors="coerce").fillna(0).astype(int)
     for columna in [
         "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
         "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",

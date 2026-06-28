@@ -72,6 +72,10 @@ def export_excel(df, name):
     EXPORT_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = EXPORT_DIR / f"{name}_{timestamp}.xlsx"
+    df = df.copy()
+    if "Resenas" not in df.columns:
+        df["Resenas"] = 0
+    df["Resenas"] = pd.to_numeric(df["Resenas"], errors="coerce").fillna(0).astype(int)
     df.to_excel(path, index=False)
     return path
 

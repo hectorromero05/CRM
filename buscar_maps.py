@@ -33,6 +33,9 @@ GOOGLE_DOMINIOS_IGNORADOS = (
     "business.google.com",
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
+RESENAS_REGEX = re.compile(
+    r"(?i)(?:\(?\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)?\s*(?:reseñas|opiniones|reviews)\b|\(\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)|\b(\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3})+)\b)"
+)
 
 
 def normalizar_nombre(valor):
@@ -232,13 +235,76 @@ def extraer_rating(page):
     return ""
 
 
+def limpiar_numero_resenas(texto):
+    texto = limpiar(texto)
+    if not texto or len(texto) > 80:
+        return ""
+    match = RESENAS_REGEX.search(texto)
+    if not match:
+        return ""
+    numero = next((grupo for grupo in match.groups() if grupo), "")
+    if not numero:
+        return ""
+    return re.sub(r"\D+", "", numero)
+
+
+def _resenas_desde_elementos(page, selector, usar_aria=False, limite=80):
+    try:
+        elementos = page.locator(selector).all()[:limite]
+    except Exception:
+        return ""
+    for elemento in elementos:
+        try:
+            texto = limpiar(elemento.get_attribute("aria-label") if usar_aria else elemento.inner_text(timeout=300))
+        except Exception:
+            texto = ""
+        resenas = limpiar_numero_resenas(texto)
+        if resenas:
+            return resenas
+    return ""
+
+
 def extraer_resenas(page):
-    for selector in ['button[aria-label*="reseñas"]', 'button[aria-label*="opiniones"]', 'button[aria-label*="reviews"]', 'span[aria-label*="reviews"]']:
-        texto = atributo_locator(page.locator(selector), "aria-label") or texto_locator(page.locator(selector))
-        if texto:
-            match = re.search(r"[\(\s]([\d,.]+)[\)\s]", f" {texto} ")
-            if match:
-                return re.sub(r"\D+", "", match.group(1))
+    """
+    Extrae el número de reseñas sin leer el texto completo de la página.
+
+    Pruebas manuales sugeridas:
+    - Abrir un negocio de Google Maps con "123 reseñas" visible y verificar Resenas=123.
+    - Abrir uno con "(1,234)" o "1.234 opiniones" y verificar Resenas=1234.
+    - Abrir uno en inglés con "123 reviews" y verificar Resenas=123.
+    """
+    selectores_contexto = [
+        'button[aria-label*="reseñas" i]',
+        'button[aria-label*="opiniones" i]',
+        'button[aria-label*="reviews" i]',
+        'span[aria-label*="reseñas" i]',
+        'span[aria-label*="opiniones" i]',
+        'span[aria-label*="reviews" i]',
+        'button:has-text("reseñas")',
+        'button:has-text("opiniones")',
+        'button:has-text("reviews")',
+        'span:has-text("reseñas")',
+        'span:has-text("opiniones")',
+        'span:has-text("reviews")',
+    ]
+    for selector in selectores_contexto:
+        resenas = _resenas_desde_elementos(page, selector, usar_aria="aria-label" in selector, limite=30)
+        if resenas:
+            return resenas
+
+    for selector in [
+        '[aria-label*="reseñas" i]',
+        '[aria-label*="opiniones" i]',
+        '[aria-label*="reviews" i]',
+    ]:
+        resenas = _resenas_desde_elementos(page, selector, usar_aria=True, limite=80)
+        if resenas:
+            return resenas
+
+    for selector in ["button", "span", "div[role='button']", "a"]:
+        resenas = _resenas_desde_elementos(page, selector, usar_aria=False, limite=120)
+        if resenas:
+            return resenas
     return ""
 
 
@@ -336,7 +402,7 @@ def buscar_prospectos(busquedas=None, max_por_busqueda=MAX_POR_BUSQUEDA, headles
                             df, nuevo = fusionar_registro(df, registro)
                             registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
                             prioridad = clasificar_prioridad(registro)
-                            print(f"{registro['Nombre']} | {registro['Telefono']} | Web: {registro['Tiene_web']} | {registro['Rating']} | {registro['Resenas']} | {prioridad}")
+                            print(f"{registro['Nombre']} | {registro['Telefono']} | Web: {registro['Tiene_web']} | Rating: {registro['Rating']} | Reseñas: {registro['Resenas']} | {prioridad}")
                             agregados += int(nuevo); actualizados += int(not nuevo); procesados_sin_guardar += 1
                             if procesados_sin_guardar >= 10:
                                 guardar_excel(df, archivo); procesados_sin_guardar = 0
