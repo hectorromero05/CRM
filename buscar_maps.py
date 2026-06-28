@@ -33,10 +33,7 @@ GOOGLE_DOMINIOS_IGNORADOS = (
     "business.google.com",
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
-RESENAS_RATING_REGEX = re.compile(r"\b[0-5](?:[.,]\d)?\b.*?\(([\d,.]+)\)")
-RESENAS_SECUNDARIAS_REGEX = re.compile(
-    r"(?i)(?:\(\s*(\d{1,3}(?:[,.]\d{3})+|\d+)\s*\)|\b(\d{1,3}(?:[,.]\d{3})+|\d+)\s*(?:reseñas|opiniones|reviews)\b)"
-)
+RESENAS_PARENTESIS_REGEX = re.compile(r"\(([\d\.,]+)\)")
 
 
 def normalizar_nombre(valor):
@@ -221,19 +218,96 @@ def extraer_telefono(page):
     return ""
 
 
-def extraer_rating(page):
-    candidatos = [
-        '[role="img"][aria-label*="estrellas"]',
-        '[role="img"][aria-label*="stars"]',
-        'span[aria-label*="estrellas"]',
-        'span[aria-label*="stars"]',
-    ]
-    for selector in candidatos:
-        texto = atributo_locator(page.locator(selector), "aria-label") or texto_locator(page.locator(selector))
-        match = re.search(r"\d+(?:[\.,]\d+)?", texto)
-        if match:
-            return match.group(0).replace(",", ".")
+RATING_SELECTORES = [
+    '[role="img"][aria-label*="estrellas"]',
+    '[role="img"][aria-label*="stars"]',
+    'span[aria-label*="estrellas"]',
+    'span[aria-label*="stars"]',
+]
+
+
+def _iter_nodos_rating(page):
+    for selector in RATING_SELECTORES:
+        try:
+            elementos = page.locator(selector).all()[:20]
+        except Exception:
+            continue
+        for elemento in elementos:
+            try:
+                if hasattr(elemento, "is_visible") and not elemento.is_visible(timeout=300):
+                    continue
+            except Exception:
+                pass
+            yield elemento
+
+
+def _texto_nodo_rating(elemento):
+    textos = []
+    try:
+        textos.append(elemento.get_attribute("aria-label", timeout=300) or "")
+    except TypeError:
+        try:
+            textos.append(elemento.get_attribute("aria-label") or "")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    try:
+        textos.append(elemento.inner_text(timeout=300))
+    except Exception:
+        pass
+    for texto in textos:
+        texto = limpiar(texto)
+        if texto:
+            return texto
     return ""
+
+
+def _texto_contenedor_rating(elemento, rating=""):
+    try:
+        textos = elemento.evaluate(
+            r"""
+            (node, rating) => {
+                const limpiar = (value) => (value || '').replace(/\s+/g, ' ').trim();
+                const textos = [];
+                let actual = node;
+                for (let i = 0; actual && i < 5; i += 1, actual = actual.parentElement) {
+                    const texto = limpiar(actual.innerText || actual.textContent || '');
+                    if (texto && texto.length <= 120) textos.push(texto);
+                    const aria = limpiar(actual.getAttribute && actual.getAttribute('aria-label'));
+                    if (aria && aria.length <= 120) textos.push(aria);
+                }
+                return [...new Set(textos)];
+            }
+            """,
+            rating,
+        )
+    except Exception:
+        textos = []
+    textos = [limpiar(texto) for texto in textos if _texto_corto_resenas(texto)]
+    if rating:
+        con_rating = [texto for texto in textos if rating in texto or rating.replace('.', ',') in texto]
+        con_parentesis = [texto for texto in con_rating if RESENAS_PARENTESIS_REGEX.search(texto)]
+        if con_parentesis:
+            return con_parentesis[0]
+        if con_rating:
+            return con_rating[0]
+    return textos[0] if textos else _texto_nodo_rating(elemento)
+
+
+def _obtener_rating_y_texto(page):
+    for elemento in _iter_nodos_rating(page):
+        texto_rating = _texto_nodo_rating(elemento)
+        match = re.search(r"\d+(?:[\.,]\d+)?", texto_rating)
+        if match:
+            rating = match.group(0).replace(",", ".")
+            return rating, _texto_contenedor_rating(elemento, rating)
+    return "", ""
+
+
+def extraer_rating(page):
+    rating, _ = _obtener_rating_y_texto(page)
+    return rating
 
 
 def limpiar_numero_resenas(texto):
@@ -257,33 +331,19 @@ def _texto_corto_resenas(texto):
     return texto
 
 
-def _extraer_resenas_rating_parentesis(texto):
-    match = RESENAS_RATING_REGEX.search(texto)
+def _extraer_resenas_parentesis(texto):
+    match = RESENAS_PARENTESIS_REGEX.search(texto or "")
     if not match:
+        print("Regex encontrada:\n")
         return 0
+    print(f"Regex encontrada:\n{match.group(0)}")
     return limpiar_numero_resenas(match.group(1))
 
 
-def _extraer_resenas_secundarias(texto):
-    # Evita tratar ratings decimales sueltos como reseñas: solo acepta números entre
-    # paréntesis o números acompañados por reseñas/opiniones/reviews.
-    for match in RESENAS_SECUNDARIAS_REGEX.finditer(texto):
-        numero = next((grupo for grupo in match.groups() if grupo), "")
-        if not numero:
-            continue
-        inicio = match.start()
-        contexto_previo = texto[max(0, inicio - 2):inicio]
-        if "$" in contexto_previo:
-            continue
-        resenas = limpiar_numero_resenas(numero)
-        if resenas:
-            return resenas
-    return 0
-
-
-def _iter_textos_cortos_resenas(page, selector, atributo=None, limite=120):
+def _iter_textos_parentesis_visibles(page, limite=160):
+    patron = re.compile(r"^\s*\([\d\.,]+\)\s*$")
     try:
-        elementos = page.locator(selector).all()[:limite]
+        elementos = page.locator("span, button, div[role='button']").all()[:limite]
     except Exception:
         return
     for elemento in elementos:
@@ -293,57 +353,31 @@ def _iter_textos_cortos_resenas(page, selector, atributo=None, limite=120):
         except Exception:
             pass
         try:
-            texto = elemento.get_attribute(atributo, timeout=300) if atributo else elemento.inner_text(timeout=300)
-        except TypeError:
-            try:
-                texto = elemento.get_attribute(atributo) if atributo else elemento.inner_text(timeout=300)
-            except Exception:
-                texto = ""
+            texto = elemento.inner_text(timeout=300)
         except Exception:
             texto = ""
         texto = _texto_corto_resenas(texto)
-        if texto:
+        if texto and patron.search(texto):
             yield texto
 
 
-def _buscar_resenas_en_textos(textos, extractor):
-    for texto in textos:
-        print(f"Texto candidato reseñas: {texto}")
-        resenas = extractor(texto)
-        if resenas:
-            print(f"Reseñas extraídas: {resenas}")
-            return resenas
-    return 0
-
-
 def extraer_resenas(page):
-    """
-    Extrae el número de reseñas sin leer el texto completo de la página.
-
-    Pruebas manuales sugeridas:
-    - Abrir un negocio de Google Maps con "4.9 ★★★★★ (110) · $200-600" y verificar Resenas=110.
-    - Abrir un negocio de Google Maps con "123 reseñas" visible y verificar Resenas=123.
-    - Abrir uno con "(1,234)" o "1.234 opiniones" y verificar Resenas=1234.
-    - Abrir uno en inglés con "123 reviews" y verificar Resenas=123.
-    """
-    selectores_texto = ["span", "button", "div"]
-    selectores_aria = ["span[aria-label]", "button[aria-label]", "div[aria-label]"]
-
-    textos_visibles = []
-    for selector in selectores_texto:
-        textos_visibles.extend(_iter_textos_cortos_resenas(page, selector, limite=160))
-    textos_aria = []
-    for selector in selectores_aria:
-        textos_aria.extend(_iter_textos_cortos_resenas(page, selector, atributo="aria-label", limite=160))
-
-    textos = textos_visibles + textos_aria
-    resenas = _buscar_resenas_en_textos(textos, _extraer_resenas_rating_parentesis)
+    """Extrae reseñas desde el contenedor del rating o elementos pequeños con paréntesis."""
+    rating, texto_rating = _obtener_rating_y_texto(page)
+    print(f"Texto rating encontrado:\n{texto_rating}")
+    resenas = _extraer_resenas_parentesis(texto_rating)
     if resenas:
+        print(f"Reseñas:\n{resenas}")
         return resenas
 
-    resenas = _buscar_resenas_en_textos(textos, _extraer_resenas_secundarias)
-    if resenas:
-        return resenas
+    for texto in _iter_textos_parentesis_visibles(page):
+        print(f"Texto rating encontrado:\n{texto}")
+        resenas = _extraer_resenas_parentesis(texto)
+        if resenas:
+            print(f"Reseñas:\n{resenas}")
+            return resenas
+
+    print("Reseñas:\n0")
     return 0
 
 
