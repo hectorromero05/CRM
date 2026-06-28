@@ -35,6 +35,9 @@ GOOGLE_DOMINIOS_IGNORADOS = (
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
 RESENAS_PARENTESIS_REGEX = re.compile(r"\(([\d\.,]+)\)")
 RESENAS_TEXTO_REGEX = re.compile(r"([\d\.,]+)\s*(?:reviews?|reseñas|resenas|opiniones)", re.I)
+DESKTOP_VIEWPORT = {"width": 1600, "height": 1000}
+DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+RESENAS_DOM_NOTA = "Google Maps no mostró número de reseñas en DOM"
 
 
 def normalizar_nombre(valor):
@@ -54,22 +57,36 @@ def _actualizar_datos_faltantes(df, idx, registro):
     return df
 
 
+def preparar_vista_maps_escritorio(page, espera=10):
+    try:
+        page.keyboard.press("Control+-")
+    except Exception:
+        pass
+    time.sleep(espera)
+
+
+def crear_contexto_maps_escritorio(browser):
+    return browser.new_context(viewport=DESKTOP_VIEWPORT, user_agent=DESKTOP_USER_AGENT)
+
+
 def extraer_registro_desde_pagina(page, google_maps_url, nicho="Google Maps URL"):
     nombre = extraer_nombre(page)
     if not nombre:
         raise ValueError("No se pudo extraer el nombre del negocio desde Google Maps.")
+    resenas = extraer_resenas(page)
+    nota_resenas = RESENAS_DOM_NOTA if resenas == 0 else ""
     registro = {
         "Nombre": nombre,
         "Nicho": nicho,
         "Telefono": extraer_telefono(page),
         "Sitio_web": extraer_sitio_web(page),
         "Rating": extraer_rating(page),
-        "Resenas": extraer_resenas(page),
+        "Resenas": int(resenas),
         "Direccion": extraer_direccion(page),
         "Horario": extraer_horario(page),
         "Categoria": extraer_categoria(page),
         "Google_Maps": google_maps_url,
-        "Notas": "",
+        "Notas": nota_resenas,
         "Fecha_busqueda": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
@@ -86,14 +103,15 @@ def agregar_prospecto_desde_maps_url(url, archivo=ARCHIVO_EXCEL, headless=False,
     df = asegurar_excel(archivo)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        page = browser.new_page(viewport={"width": 1366, "height": 768})
+        context = crear_contexto_maps_escritorio(browser)
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
-            time.sleep(3)
+            preparar_vista_maps_escritorio(page)
             final_url = page.url or url
             if "google" not in final_url and "goo.gl" not in final_url and "maps.app" not in final_url:
                 raise ValueError(f"El link redirigió fuera de Google Maps: {final_url}")
@@ -101,6 +119,7 @@ def agregar_prospecto_desde_maps_url(url, archivo=ARCHIVO_EXCEL, headless=False,
         except Exception as exc:
             raise RuntimeError(f"No se pudo abrir o leer el link de Google Maps: {exc}") from exc
         finally:
+            context.close()
             browser.close()
 
     idx = encontrar_duplicado(df, registro)
@@ -430,11 +449,13 @@ def extraer_categoria(page):
 
 def extraer_detalle(page, link, busqueda):
     page.goto(link, wait_until="domcontentloaded", timeout=60000)
-    time.sleep(3)
+    preparar_vista_maps_escritorio(page)
     nombre = extraer_nombre(page)
     if not nombre:
         return None
     telefono = extraer_telefono(page)
+    resenas = extraer_resenas(page)
+    nota_resenas = RESENAS_DOM_NOTA if resenas == 0 else ""
     print(f"Telefono encontrado: {telefono}")
     return {
         "Nombre": nombre,
@@ -442,12 +463,12 @@ def extraer_detalle(page, link, busqueda):
         "Telefono": telefono,
         "Sitio_web": extraer_sitio_web(page),
         "Rating": extraer_rating(page),
-        "Resenas": extraer_resenas(page),
+        "Resenas": int(resenas),
         "Direccion": extraer_direccion(page),
         "Horario": extraer_horario(page),
         "Categoria": extraer_categoria(page),
         "Google_Maps": link,
-        "Notas": "",
+        "Notas": nota_resenas,
         "Fecha_busqueda": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
 
@@ -458,7 +479,8 @@ def buscar_prospectos(busquedas=None, max_por_busqueda=MAX_POR_BUSQUEDA, headles
     busquedas = busquedas or generar_busquedas()
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        page = browser.new_page(viewport={"width": 1366, "height": 768})
+        context = crear_contexto_maps_escritorio(browser)
+        page = context.new_page()
         try:
             for busqueda in busquedas:
                 try:
@@ -501,6 +523,7 @@ def buscar_prospectos(busquedas=None, max_por_busqueda=MAX_POR_BUSQUEDA, headles
             raise
         finally:
             guardar_excel(df, archivo)
+            context.close()
             browser.close()
     print(f"\nListo: {archivo}. Nuevos: {agregados}. Actualizados/duplicados: {actualizados}. Total: {len(df)}")
     return df
