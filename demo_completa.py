@@ -1,11 +1,14 @@
+import shutil
+import subprocess
 import webbrowser
 from pathlib import Path
 
 from codex_manager import _abrir_vscode, _copiar_portapapeles, asegurar_archivos_codex
 from crm_utils import ARCHIVO_EXCEL, asegurar_excel, guardar_excel, slugify
 from generar_demo import demo_vacia, generar_demo
-from github_manager import crear_repo_demo
 from vercel_manager import deploy_vercel
+
+GITHUB_OWNER = "hectorromero05"
 
 
 def _agregar_nota(notas, nueva):
@@ -32,6 +35,101 @@ def _abrir_codex():
         print(f"No se pudo abrir Codex Online automáticamente: {exc}")
 
 
+def _ejecutar(comando, cwd=None):
+    return subprocess.run(
+        comando,
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _mensaje_error(resultado):
+    return (resultado.stderr or resultado.stdout or "Error desconocido.").strip()
+
+
+def _eliminar_carpetas_heredadas(carpeta_demo, nombre=".git"):
+    carpeta = Path(carpeta_demo).expanduser().resolve()
+    for heredada in list(carpeta.rglob(nombre)):
+        if heredada.is_dir():
+            shutil.rmtree(heredada, ignore_errors=True)
+            print(f"Carpeta heredada eliminada: {heredada}")
+
+
+def _nombre_con_sufijo(base, numero):
+    return base if numero == 1 else f"{base}-{numero}"
+
+
+def _git_limpio(carpeta_demo):
+    comandos = [
+        ["git", "init"],
+        ["git", "add", "."],
+        ["git", "commit", "-m", "Primera versión"],
+        ["git", "branch", "-M", "main"],
+    ]
+    for comando in comandos:
+        resultado = _ejecutar(comando, cwd=carpeta_demo)
+        if resultado.returncode != 0:
+            return False, f"Error al ejecutar {' '.join(comando)}: {_mensaje_error(resultado)}"
+    return True, ""
+
+
+def _limpiar_remotes(carpeta_demo):
+    remotes = _ejecutar(["git", "remote"], cwd=carpeta_demo)
+    if remotes.returncode != 0:
+        return False, f"Error al leer remotes git: {_mensaje_error(remotes)}"
+    for remote in remotes.stdout.splitlines():
+        remote = remote.strip()
+        if remote:
+            borrar = _ejecutar(["git", "remote", "remove", remote], cwd=carpeta_demo)
+            if borrar.returncode != 0:
+                return False, f"Error al eliminar remote {remote}: {_mensaje_error(borrar)}"
+    return True, ""
+
+
+def _crear_repo_github_limpio(carpeta_demo, base_nombre, max_intentos=20):
+    if shutil.which("git") is None:
+        return "", "", "Git no está instalado o no está disponible en PATH."
+    if shutil.which("gh") is None:
+        return "", "", "GitHub CLI no está instalado. Instálalo desde https://cli.github.com/"
+
+    ok, error = _git_limpio(carpeta_demo)
+    if not ok:
+        return "", "", error
+
+    ultimo_error = ""
+    for numero in range(1, max_intentos + 1):
+        nombre_proyecto = _nombre_con_sufijo(base_nombre, numero)
+        repo_url = f"https://github.com/{GITHUB_OWNER}/{nombre_proyecto}"
+        remote_url = f"{repo_url}.git"
+
+        crear = _ejecutar(["gh", "repo", "create", nombre_proyecto, "--public"], cwd=carpeta_demo)
+        if crear.returncode != 0:
+            ultimo_error = _mensaje_error(crear)
+            if "already exists" in ultimo_error.lower() or "name already exists" in ultimo_error.lower():
+                print(f"El repositorio {nombre_proyecto} ya existe. Probando otro nombre...")
+                continue
+            return "", "", f"No se pudo crear el repositorio GitHub: {ultimo_error}"
+
+        ok, error = _limpiar_remotes(carpeta_demo)
+        if not ok:
+            return "", "", error
+        remote = _ejecutar(["git", "remote", "add", "origin", remote_url], cwd=carpeta_demo)
+        if remote.returncode != 0:
+            return "", "", f"Error al agregar remote origin: {_mensaje_error(remote)}"
+
+        push = _ejecutar(["git", "push", "-u", "origin", "main"], cwd=carpeta_demo)
+        if push.returncode != 0:
+            return "", "", f"El repositorio fue creado, pero ocurrió un error al hacer push: {_mensaje_error(push)}"
+
+        print(f"repo creado: {repo_url}")
+        print(f"remote usado: {remote_url}")
+        return repo_url, nombre_proyecto, ""
+
+    return "", "", f"No se encontró un nombre disponible para GitHub. Último error: {ultimo_error}"
+
+
 def generar_demo_completa(id_prospecto, archivo=ARCHIVO_EXCEL):
     id_limpio = str(id_prospecto).strip()
     df = asegurar_excel(archivo)
@@ -42,7 +140,8 @@ def generar_demo_completa(id_prospecto, archivo=ARCHIVO_EXCEL):
 
     idx = fila.index[0]
     prospecto = fila.iloc[0].to_dict()
-    nombre_proyecto = f"{slugify(prospecto.get('Nombre'))}-web"
+    base_nombre_proyecto = f"{slugify(prospecto.get('Nombre'))}-web"
+    nombre_proyecto = base_nombre_proyecto
     resumen = {"github": "", "vercel": "", "carpeta": "", "prompt": "", "codex_task": ""}
 
     try:
@@ -50,6 +149,7 @@ def generar_demo_completa(id_prospecto, archivo=ARCHIVO_EXCEL):
         if not carpeta:
             return None
         carpeta = Path(carpeta).expanduser().resolve()
+        _eliminar_carpetas_heredadas(carpeta, ".git")
         resumen["carpeta"] = str(carpeta)
         df = asegurar_excel(archivo)
         idx = df[df["ID"].astype(str) == id_limpio].index[0]
@@ -75,9 +175,17 @@ def generar_demo_completa(id_prospecto, archivo=ARCHIVO_EXCEL):
         print(f"No se pudieron crear archivos Codex: {exc}")
 
     try:
-        repo_url = crear_repo_demo(id_limpio, permitir_alternativo=True)
+        repo_url, nombre_github, error = _crear_repo_github_limpio(carpeta, base_nombre_proyecto)
+        df = asegurar_excel(archivo)
+        idx = df[df["ID"].astype(str) == id_limpio].index[0]
         if repo_url:
             resumen["github"] = repo_url
+            nombre_proyecto = nombre_github
+            df.at[idx, "Repositorio_GitHub"] = repo_url
+            df.at[idx, "Estado"] = "Repositorio creado"
+        elif error:
+            df.at[idx, "Notas"] = _agregar_nota(df.at[idx, "Notas"], f"Error GitHub: {error}")
+        guardar_excel(df, archivo)
     except Exception as exc:
         df = asegurar_excel(archivo)
         idx = df[df["ID"].astype(str) == id_limpio].index[0]
@@ -86,11 +194,13 @@ def generar_demo_completa(id_prospecto, archivo=ARCHIVO_EXCEL):
         print(f"No se pudo crear repositorio GitHub: {exc}")
 
     try:
-        vercel_url, error = deploy_vercel(carpeta, nombre_proyecto)
+        _eliminar_carpetas_heredadas(carpeta, ".vercel")
+        vercel_url, error, nombre_vercel = deploy_vercel(carpeta, nombre_proyecto)
         df = asegurar_excel(archivo)
         idx = df[df["ID"].astype(str) == id_limpio].index[0]
         if vercel_url:
             resumen["vercel"] = vercel_url
+            nombre_proyecto = nombre_vercel or nombre_proyecto
             df.at[idx, "Vercel_URL"] = vercel_url
             df.at[idx, "Vercel_Project_Name"] = nombre_proyecto
             df.at[idx, "Estado"] = "Demo publicada"
