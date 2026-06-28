@@ -12,7 +12,9 @@ COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
     "Direccion", "Horario", "Categoria", "Google_Maps", "Posible_duplicado", "Prioridad",
     "Estado", "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
-    "Codex_Task", "Restaurant_JSON", "Notas", "Fecha_busqueda",
+    "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
+    "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
+    "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Notas", "Fecha_busqueda",
 ]
 
 ESTADOS = [
@@ -72,7 +74,9 @@ def asegurar_excel(ruta=ARCHIVO_EXCEL):
         pd.DataFrame(columns=COLUMNAS).to_excel(ruta, index=False)
     texto_columnas = [
         "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
-        "Codex_Task", "Restaurant_JSON", "Estado", "Notas", "Telefono",
+        "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
+        "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
+        "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
     ]
     df = pd.read_excel(ruta, dtype={col: object for col in texto_columnas})
     for columna in COLUMNAS:
@@ -91,7 +95,9 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
             df[columna] = ""
     for columna in [
         "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
-        "Codex_Task", "Restaurant_JSON", "Estado", "Notas", "Telefono",
+        "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
+        "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
+        "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
     ]:
         if columna in df.columns:
             df[columna] = df[columna].fillna("").astype("object")
@@ -215,7 +221,7 @@ def estilo_por_nicho(nicho):
     if "hamburg" in n:
         return "estilo urbano", ["negro", "rojo", "naranja"]
     if "pizza" in n or "italiano" in n:
-        return "estilo italiano", ["rojo", "crema", "verde"]
+        return "trattoria italiana familiar", ["rojo tomate", "crema", "verde albahaca", "madera clara"]
     return "moderno, limpio, adaptable a celular", ["negro", "blanco", "gris", "color acento adaptable"]
 
 

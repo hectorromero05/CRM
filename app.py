@@ -9,7 +9,7 @@ import streamlit as st
 
 from buscar_maps import buscar_prospectos, generar_busquedas
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel
-from demo_completa import generar_demo_completa
+from project_factory import crear_proyecto_cliente, finalizar_proyecto
 
 CONFIG_PATH = Path("config.json")
 EXPORT_DIR = Path("exports")
@@ -81,10 +81,27 @@ st.title("CRM Restaurantes")
 
 section = st.sidebar.radio(
     "Secciones",
-    ["Buscar prospectos", "Ver prospectos", "Generar demo completa", "Exportar", "Configuración"],
+    ["Dashboard", "Buscar prospectos", "Ver prospectos", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
 )
 
-if section == "Buscar prospectos":
+if section == "Dashboard":
+    st.header("Dashboard")
+    df = load_prospectos()
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Total prospectos", len(df))
+    c2.metric("Alta prioridad", metric_count(df, "Prioridad", "Alta"))
+    c3.metric("Interesados", metric_count(df, "Estado", "Interesado"))
+    c4.metric("Demos creadas", metric_count(df, "Proyecto_Creado", "sí"))
+    c5.metric("Repositorios", metric_count(df, "Repo_Creado", "sí"))
+    c6.metric("Deploys", metric_count(df, "Deploy_Completado", "sí"))
+    search = st.text_input("Buscador", "")
+    base = df.copy()
+    if search:
+        mask = base.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)
+        base = base[mask]
+    st.dataframe(base, use_container_width=True, hide_index=True)
+
+elif section == "Buscar prospectos":
     st.header("Buscar prospectos")
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
@@ -140,8 +157,8 @@ elif section == "Ver prospectos":
     st.caption(f"Mostrando {len(filtered)} de {len(df)} prospectos")
     st.dataframe(filtered, use_container_width=True, hide_index=True)
 
-elif section == "Generar demo completa":
-    st.header("Generar demo completa")
+elif section == "Crear proyecto":
+    st.header("Crear proyecto del cliente")
     df = load_prospectos()
     if df.empty:
         st.info("No hay prospectos guardados todavía.")
@@ -149,17 +166,37 @@ elif section == "Generar demo completa":
         options = [f"{row.ID} - {row.Nombre}" for row in df[["ID", "Nombre"]].itertuples(index=False)]
         selected = st.selectbox("Selector de prospecto por ID o nombre", options)
         id_prospecto = selected.split(" - ", 1)[0]
-        if st.button("Generar demo completa", type="primary"):
-            with st.spinner("Generando demo, repositorio y deploy si la configuración local lo permite..."):
-                resumen = generar_demo_completa(id_prospecto)
+        if st.button("Crear proyecto", type="primary"):
+            with st.spinner("Creando carpeta, archivos Codex, repo GitHub y push..."):
+                resumen = crear_proyecto_cliente(id_prospecto)
             if resumen:
-                st.success("Demo completa generada.")
+                st.success("Proyecto listo. Seleccione el repositorio en Codex y pegue la tarea.")
                 st.write("**Ruta local:**", resumen.get("carpeta") or "")
                 st.write("**Repo GitHub:**", resumen.get("github") or "")
                 st.write("**URL Vercel:**", resumen.get("vercel") or "")
                 st.write("**Archivo codex_task.md:**", resumen.get("codex_task") or "")
             else:
                 st.error("No se pudo generar la demo completa. Revisa la consola o las notas del prospecto.")
+
+elif section == "Finalizar proyecto":
+    st.header("Finalizar proyecto")
+    df = load_prospectos()
+    if df.empty:
+        st.info("No hay prospectos guardados todavía.")
+    else:
+        options = [f"{row.ID} - {row.Nombre}" for row in df[["ID", "Nombre"]].itertuples(index=False)]
+        selected = st.selectbox("Selector de prospecto", options)
+        id_prospecto = selected.split(" - ", 1)[0]
+        if st.button("Finalizar proyecto", type="primary"):
+            with st.spinner("Ejecutando git pull, npm install, build y deploy Vercel..."):
+                resumen = finalizar_proyecto(id_prospecto)
+            if resumen:
+                st.success("Proyecto finalizado.")
+                st.write("**Repositorio:**", resumen.get("repositorio") or "")
+                st.write("**Vercel:**", resumen.get("vercel") or "")
+                st.write("**Ruta local:**", resumen.get("ruta") or "")
+            else:
+                st.error("No se pudo finalizar el proyecto.")
 
 elif section == "Exportar":
     st.header("Exportar")

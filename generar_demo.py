@@ -98,101 +98,117 @@ def _lista_texto(valores):
 
 def crear_restaurant_json(prospecto):
     estilo, colores = estilo_por_nicho(prospecto.get("Nicho", ""))
-    secciones = [
-        "Hero con propuesta de valor y CTA a WhatsApp",
-        "Menú o productos destacados",
-        "Galería de ambiente y platillos",
-        "Historia breve del restaurante",
-        "Reseñas y confianza",
-        "Ubicación, horarios y Google Maps",
-        "CTA final para reservar o pedir por WhatsApp",
+    nombre = str(prospecto.get("Nombre", "Restaurante")).strip() or "Restaurante"
+    nicho = str(prospecto.get("Nicho", "restaurante")).strip() or "restaurante"
+    telefono = str(prospecto.get("Telefono", "")).strip()
+    maps = str(prospecto.get("Google_Maps", "")).strip()
+    servicios = ["Reservaciones", "Pedidos por WhatsApp", "Ubicación en Google Maps", "Menú destacado"]
+    botones = [
+        {"texto": "Reservar por WhatsApp", "tipo": "whatsapp", "url": f"https://wa.me/{normalizar_telefono(telefono)}" if normalizar_telefono(telefono) else ""},
+        {"texto": "Cómo llegar", "tipo": "maps", "url": maps},
     ]
-    imagenes = ["/hero.jpg", "/logo.png", "/galeria1.jpg", "/galeria2.jpg", "/galeria3.jpg"]
     return {
-        "nombre": str(prospecto.get("Nombre", "")),
-        "telefono": str(prospecto.get("Telefono", "")),
-        "whatsapp": str(prospecto.get("Telefono", "")),
-        "google_maps": str(prospecto.get("Google_Maps", "")),
+        "nombre": nombre,
+        "telefono": telefono,
+        "whatsapp": telefono,
+        "google_maps": maps,
         "direccion": str(prospecto.get("Direccion", "")),
-        "nicho": str(prospecto.get("Nicho", "")),
-        "categoria": str(prospecto.get("Categoria", "")),
+        "horario": str(prospecto.get("Horario", "")),
         "rating": str(prospecto.get("Rating", "")),
         "resenas": str(prospecto.get("Resenas", "")),
+        "nicho": nicho,
+        "categoria": str(prospecto.get("Categoria", nicho)),
         "sitio_web": str(prospecto.get("Sitio_web", "")),
         "tiene_web": str(prospecto.get("Tiene_web", "")),
-        "estilo_sugerido": estilo,
         "colores_sugeridos": colores,
-        "secciones_recomendadas": secciones,
-        "imagenes_recomendadas": imagenes,
+        "estilo_sugerido": estilo,
+        "palabras_clave_seo": [nombre, nicho, f"{nicho} cerca de mí", "restaurante en Guadalajara", "reservaciones por WhatsApp"],
+        "meta_description": f"Conoce {nombre}, {nicho} con ubicación, menú, reseñas y reservaciones por WhatsApp.",
+        "servicios": servicios,
+        "botones": botones,
+        "redes_sociales": {"instagram": "", "facebook": "", "tiktok": ""},
+        "imagenes": {"hero": "/hero.jpg", "logo": "/logo.png", "galeria": ["/galeria1.jpg", "/galeria2.jpg", "/galeria3.jpg"]},
+        "secciones_sugeridas": ["Hero", "Historia", "Especialidades", "Galería", "Menú", "Mapa", "Reseñas", "CTA final", "Footer"],
     }
 
 
 def crear_prompt(prospecto):
     datos = crear_restaurant_json(prospecto)
-    nombre = datos["nombre"] or "Restaurante"
-    nicho = datos["nicho"] or "restaurante"
+    nombre = datos["nombre"]
+    nicho = datos["nicho"]
     colores = _lista_texto(datos["colores_sugeridos"])
-    secciones = "\n".join(f"- {s}" for s in datos["secciones_recomendadas"])
-    imagenes = "\n".join(f"- {img}" for img in datos["imagenes_recomendadas"])
-    title = f"{nombre} | {nicho}"
-    description = f"Landing page profesional para {nombre}: {nicho}, ubicación, galería, reseñas y botón de WhatsApp."
-    return f"""Adapta esta plantilla para crear una landing page profesional para {nombre}.
+    keywords = _lista_texto(datos["palabras_clave_seo"])
+    return f"""# Tarea Codex Online — landing premium para {nombre}
 
-Actúa como desarrollador frontend senior especializado en React + Vite y páginas de restaurantes listas para vender. Trabaja sobre este repositorio manteniendo la estructura existente.
+## Rol y resultado esperado
+Actúa como director creativo, diseñador UI senior y desarrollador frontend React + Vite. Debes transformar este repositorio en una landing profesional para restaurante. No hagas una edición superficial: el sitio final debe parecer un proyecto hecho desde cero y vendible por $15,000–$20,000 MXN.
 
 ## Datos del restaurante
-- Nombre del restaurante: {nombre}
+- Nombre: {nombre}
 - Teléfono: {datos['telefono']}
 - WhatsApp: {datos['whatsapp']}
 - Google Maps: {datos['google_maps']}
 - Dirección: {datos['direccion']}
-- Nicho: {nicho}
-- Categoría: {datos['categoria']}
+- Horario: {datos['horario']}
 - Rating: {datos['rating']}
 - Reseñas: {datos['resenas']}
-- Sitio web actual: {datos['sitio_web']}
-- Tiene web: {datos['tiene_web']}
+- Categoría/Nicho: {datos['categoria']} / {nicho}
+- Estilo sugerido: {datos['estilo_sugerido']}
+- Colores sugeridos: {colores}
+- Keywords SEO: {keywords}
+- Meta description: {datos['meta_description']}
 
-## Estilo visual sugerido
-- Estilo: {datos['estilo_sugerido']}
-- Paleta de colores sugerida: {colores}
-- Debe sentirse moderno, apetitoso, confiable, rápido y optimizado para celular.
+## Reglas obligatorias de identidad visual
+No te limites a cambiar textos. Cambia de forma visible y profunda:
+1. Paleta de colores completa.
+2. Tipografías y jerarquías.
+3. Hero, composición, imagen/fondo y CTA.
+4. Iconografía y microdetalles.
+5. Estructura de secciones.
+6. Botones, estados hover y foco.
+7. Fondos, gradientes, patrones o texturas.
+8. Tarjetas, bordes, radios y sombras.
+9. Animaciones CSS sutiles.
+10. Layout responsive, espaciados y ritmo visual.
+11. Footer y navegación.
 
-## Secciones recomendadas
-{secciones}
+Cada restaurante debe verse distinto. Si el nicho es mariscos usa tema costero con azules, turquesa, arena y blanco. Si es taquería usa rojo, amarillo, negro y estilo mexicano. Si es cafetería usa beige, terracota, café y crema minimalista. Si es parrilla usa verde oscuro, madera, carbón y crema. Si es hamburguesas usa negro, rojo, naranja y estilo urbano. Si es sushi usa negro, rojo, rosa y Japón moderno. Si es pizza usa rojo, crema y verde con sensación italiana.
 
-## Rutas de imágenes locales disponibles
-Usa estas rutas desde la carpeta public del proyecto:
-{imagenes}
+## Imágenes
+Usa siempre rutas locales desde public: /hero.jpg, /logo.png, /galeria1.jpg, /galeria2.jpg, /galeria3.jpg. Nunca dejes imágenes rotas. Implementa fallbacks visuales con gradientes, fondos CSS o placeholders elegantes si una imagen no carga. No dependas de imágenes externas para que la demo funcione.
 
-## Archivos que debes modificar
-1. src/App.jsx
-   - Reemplaza textos genéricos por contenido comercial para {nombre}.
-   - Agrega CTAs claros para WhatsApp y Google Maps.
-   - Crea secciones coherentes con el nicho {nicho}.
-   - Agrega un botón flotante de WhatsApp visible en móvil y escritorio.
-2. src/App.css
-   - Aplica la paleta sugerida: {colores}.
-   - Optimiza todo para celular primero, con diseño responsive.
-   - Mejora espaciados, tipografía, tarjetas, botones y galería.
-3. index.html
-   - Actualiza el title a: {title}
-   - Actualiza la meta description a: {description}
+## Landing obligatoria
+Incluye como mínimo: Hero, Historia, Especialidades, Galería, Menú, Mapa, botón WhatsApp, botón Google Maps, Reseñas, CTA final y Footer. El copy debe vender: confianza, sabor, ubicación, facilidad de reservar/pedir y prueba social.
 
-## Reglas técnicas obligatorias
-- Mantén React + Vite; no migres a otro framework.
-- No uses Tailwind CSS.
-- No agregues dependencias innecesarias.
-- Mantén las imágenes con rutas locales /hero.jpg, /logo.png, /galeria1.jpg, /galeria2.jpg y /galeria3.jpg cuando existan.
-- No dejes imágenes rotas: en src/App.jsx agrega fallback visual para hero, logo, galería y tarjetas de platillos usando onError, estados de carga o contenedores alternativos; en src/App.css usa gradientes de fondo cuando falten imágenes locales.
-- Si las imágenes locales no existen, usa placeholders visuales con gradientes CSS o imágenes temporales de Unsplash pertinentes al restaurante.
-- Optimiza para celular, rendimiento y claridad comercial.
-- No inventes datos sensibles. Si falta un dato, usa copy genérico y deja el código fácil de editar.
+## Componentización obligatoria
+Separa App.jsx. Crea componentes en src/components/:
+- Hero.jsx
+- About.jsx
+- Menu.jsx
+- Gallery.jsx
+- Testimonials.jsx
+- Location.jsx
+- Footer.jsx
+- Navbar.jsx
+- WhatsappButton.jsx
+Puedes agregar más componentes si mejora la calidad.
 
-## Objetivo final
-Deja una landing page profesional, visualmente atractiva y lista para mostrar al restaurante, con enfoque en que el visitante haga clic en WhatsApp o abra Google Maps.
+## SEO obligatorio
+Actualiza index.html y/o el componente SEO según aplique:
+- title
+- meta description
+- keywords
+- Open Graph
+- Twitter Card
+- Schema.org Restaurant en JSON-LD
+- Favicon o referencia a logo si existe
+
+## Calidad técnica
+Mantén React + Vite. No migres de framework. No agregues dependencias innecesarias. El sitio debe compilar con npm run build. Prioriza mobile-first, accesibilidad básica, semántica HTML, botones con aria-label cuando corresponda, contraste legible y rendimiento.
+
+## Entregable final
+Deja el repositorio listo para commit/push/deploy. Ejecuta o recomienda npm run build. Resume archivos modificados y cualquier dato faltante que haya requerido placeholder.
 """
-
 
 def crear_codex_task(prospecto):
     return crear_prompt(prospecto)
