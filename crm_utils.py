@@ -11,12 +11,13 @@ ARCHIVO_EXCEL = "prospectos_restaurantes.xlsx"
 COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
     "Direccion", "Horario", "Categoria", "Google_Maps", "Prioridad", "Estado", "Demo",
-    "Notas", "Fecha_busqueda", "Repositorio_GitHub", "Codex_Task", "Restaurant_JSON",
+    "Notas", "Fecha_busqueda", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
+    "Codex_Task", "Restaurant_JSON",
 ]
 
 ESTADOS = [
     "Pendiente", "Contactado", "Respondió", "Interesado", "Demo creada", "Demo enviada",
-    "Cotización enviada", "Cerrado", "Perdido",
+    "Cotización enviada", "Demo publicada", "Cerrado", "Perdido",
 ]
 
 NICHOS = [
@@ -69,12 +70,17 @@ def parse_int(valor):
 def asegurar_excel(ruta=ARCHIVO_EXCEL):
     if not os.path.exists(ruta):
         pd.DataFrame(columns=COLUMNAS).to_excel(ruta, index=False)
-    df = pd.read_excel(ruta, dtype={"Demo": object, "Telefono": object})
+    texto_columnas = [
+        "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
+        "Codex_Task", "Restaurant_JSON", "Estado", "Notas", "Telefono",
+    ]
+    df = pd.read_excel(ruta, dtype={col: object for col in texto_columnas})
     for columna in COLUMNAS:
         if columna not in df.columns:
             df[columna] = ""
-    df["Demo"] = df["Demo"].fillna("").astype(object)
-    df["Telefono"] = df["Telefono"].fillna("").astype(object)
+    for columna in texto_columnas:
+        if columna in df.columns:
+            df[columna] = df[columna].fillna("").astype("object")
     return df[COLUMNAS]
 
 
@@ -83,8 +89,12 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
     for columna in COLUMNAS:
         if columna not in df.columns:
             df[columna] = ""
-    df["Demo"] = df["Demo"].fillna("").astype(object)
-    df["Telefono"] = df["Telefono"].fillna("").astype(object)
+    for columna in [
+        "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
+        "Codex_Task", "Restaurant_JSON", "Estado", "Notas", "Telefono",
+    ]:
+        if columna in df.columns:
+            df[columna] = df[columna].fillna("").astype("object")
     df = df[COLUMNAS]
     df.to_excel(ruta, index=False)
 
