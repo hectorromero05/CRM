@@ -138,9 +138,9 @@ Columnas principales:
 ## Notas importantes
 
 - No automatiza WhatsApp.
+- Prueba manual de reseñas en Google Maps: agrega negocios con reseñas visibles como `123 reseñas`, `123 opiniones`, `(1,234)`, `1.234 opiniones` o `123 reviews` y verifica que la columna `Resenas` de `prospectos_restaurantes.xlsx` y de `export_prospectos.xlsx` se llene con enteros (`123`, `1234`, etc.).
 - No usa APIs pagadas.
 - No usa Apify.
 - No usa Claude.
 - No usa Tailwind.
 - Mantiene React + Vite.
-

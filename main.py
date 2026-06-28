@@ -1,3 +1,5 @@
+import pandas as pd
+
 from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas, imprimir_resumen_prospecto
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demos_lote, prospectos_para_demo_lote
@@ -134,6 +136,7 @@ def generar_demos_en_lote():
 
 def exportar_filtrada():
     df = asegurar_excel()
+    df["Resenas"] = pd.to_numeric(df["Resenas"], errors="coerce").fillna(0).astype(int)
     prioridad = input("Prioridad a exportar (Alta/Media/Baja, Enter = todas): ").strip()
     estado = input("Estado a exportar (Enter = todos): ").strip()
     if prioridad:
