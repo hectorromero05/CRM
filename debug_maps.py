@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright
 
-from buscar_maps import limpiar
+from buscar_maps import DESKTOP_USER_AGENT, DESKTOP_VIEWPORT, limpiar, preparar_vista_maps_escritorio
 
 URL_DEFAULT = "https://www.google.com/maps/search/restaurante+Guadalajara?hl=es-419"
 MAX_TEXTO = 120
@@ -48,20 +48,26 @@ def _imprimir_unicos(titulo, valores):
 def inspeccionar_maps(url):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
-        page = browser.new_page(viewport={"width": 1366, "height": 768})
+        context = browser.new_context(viewport=DESKTOP_VIEWPORT, user_agent=DESKTOP_USER_AGENT)
+        page = context.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         try:
             page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
         time.sleep(3)
+        vista_preparada = False
         try:
             enlaces = page.locator('a[href*="/maps/place"]').all()
             if enlaces and "/maps/search/" in page.url:
                 enlaces[0].click(timeout=5000)
-                time.sleep(3)
+                preparar_vista_maps_escritorio(page)
+                vista_preparada = True
         except Exception:
             pass
+
+        if "/maps/search/" not in page.url and not vista_preparada:
+            preparar_vista_maps_escritorio(page)
 
         print(f"URL inspeccionada: {page.url}")
 
@@ -109,6 +115,7 @@ def inspeccionar_maps(url):
             if texto:
                 spans.append(texto)
         _imprimir_unicos("Spans", spans)
+        context.close()
         browser.close()
 
 

@@ -5,11 +5,17 @@ from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright
 
-from buscar_maps import extraer_rating, limpiar
+from buscar_maps import (
+    DESKTOP_USER_AGENT,
+    DESKTOP_VIEWPORT,
+    extraer_rating,
+    limpiar,
+    preparar_vista_maps_escritorio,
+)
 
 OUTPUT_FILE = Path("debug_reviews_output.txt")
 MAX_LEN = 160
-REVIEW_KEYWORDS = ("stars", "estrellas", "reviews", "reseñas", "resenas", "opiniones")
+REVIEW_KEYWORDS = ("rating", "stars", "estrellas", "reviews", "reseñas", "resenas", "opiniones")
 
 
 def _visible_text(elemento):
@@ -65,15 +71,18 @@ def diagnosticar_reviews(url):
     lines = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
-        page = browser.new_page(viewport={"width": 1366, "height": 768})
+        context = browser.new_context(viewport=DESKTOP_VIEWPORT, user_agent=DESKTOP_USER_AGENT)
+        page = context.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         try:
             page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
-        time.sleep(8)
+        preparar_vista_maps_escritorio(page)
 
         lines.append(f"URL inspeccionada: {page.url}")
+        lines.append(f"Viewport usado: {DESKTOP_VIEWPORT}")
+        lines.append(f"User agent usado: {DESKTOP_USER_AGENT}")
         h1 = _visible_text(page.locator("h1").first)
         lines.append("\n=== h1 ===")
         lines.append(h1 or "(sin h1 visible)")
@@ -103,6 +112,13 @@ def diagnosticar_reviews(url):
             if aria:
                 arias.append(aria)
 
+        filtros = [
+            t for t in textos
+            if "(" in t
+            or any(k in t.lower() for k in REVIEW_KEYWORDS)
+            or (rating and any(r in t for r in {rating, rating.replace(".", ",")}))
+        ]
+        _section(lines, "textos cortos con rating/paréntesis/reseñas/opiniones/reviews", filtros)
         _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con "(" y ")"', [t for t in textos if "(" in t and ")" in t])
         if rating:
             variantes_rating = {rating, rating.replace(".", ",")}
@@ -110,7 +126,8 @@ def diagnosticar_reviews(url):
         else:
             _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con rating', [])
         _section(lines, f'aria-label menores de {MAX_LEN} caracteres con "(" y ")"', [a for a in arias if "(" in a and ")" in a])
-        _section(lines, "aria-label con stars/estrellas/reviews/reseñas/opiniones", [a for a in arias if any(k in a.lower() for k in REVIEW_KEYWORDS)])
+        _section(lines, "aria-label con rating/stars/estrellas/reviews/reseñas/opiniones", [a for a in arias if any(k in a.lower() for k in REVIEW_KEYWORDS)])
+        context.close()
         browser.close()
 
     output = "\n".join(lines) + "\n"
