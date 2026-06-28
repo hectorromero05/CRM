@@ -1,5 +1,6 @@
 """Automatización para crear y finalizar proyectos web de restaurantes."""
 import base64
+import os
 import shutil
 import subprocess
 import time
@@ -23,6 +24,22 @@ def _run(cmd, cwd=None):
 
 def _msg(res):
     return (res.stderr or res.stdout or "Error desconocido").strip()
+
+
+def _cmd_disponible(nombre):
+    """Devuelve el ejecutable disponible, prefiriendo .cmd en Windows."""
+    cmd = shutil.which(f"{nombre}.cmd")
+    normal = shutil.which(nombre)
+    if os.name == "nt":
+        return cmd or normal
+    return normal or cmd
+
+
+def _imprimir_salida(res):
+    if res.stdout:
+        print(res.stdout)
+    if res.stderr:
+        print(res.stderr)
 
 
 def _note(df, idx, text):
@@ -130,11 +147,27 @@ def finalizar_proyecto(id_prospecto, archivo=ARCHIVO_EXCEL):
     idx = fila.index[0]; carpeta = Path(str(fila.iloc[0].get("Ruta_Local") or fila.iloc[0].get("Demo") or "")).expanduser().resolve()
     if not carpeta.exists(): print(f"Ruta local inválida: {carpeta}"); return None
     resumen = {"repositorio": str(fila.iloc[0].get("Repositorio_GitHub") or fila.iloc[0].get("URL_GitHub") or ""), "vercel": "", "ruta": str(carpeta)}
-    for cmd in (["git","pull"], ["npm","install"], ["npm","run","build"]):
-        res = _run(cmd, cwd=carpeta); print(res.stdout); 
+
+    res = _run(["git", "pull"], cwd=carpeta); _imprimir_salida(res)
+    if res.returncode != 0:
+        _note(df, idx, f"Error git pull: {_msg(res)}"); guardar_excel(df, archivo); return resumen
+
+    npm = _cmd_disponible("npm")
+    if not npm:
+        error = "Node.js/npm no está instalado o no está en PATH."
+        print(error); _note(df, idx, error); guardar_excel(df, archivo); return resumen
+
+    vercel = _cmd_disponible("vercel")
+    if not vercel:
+        error = "Vercel CLI no está instalado. Instálalo con npm i -g vercel."
+        print(error); _note(df, idx, error); guardar_excel(df, archivo); return resumen
+
+    for cmd in ([npm, "install"], [npm, "run", "build"]):
+        res = _run(cmd, cwd=carpeta); _imprimir_salida(res)
         if res.returncode != 0:
             _note(df, idx, f"Error {' '.join(cmd)}: {_msg(res)}"); guardar_excel(df, archivo); return resumen
-    res = _run(["vercel", "--prod", "--yes"], cwd=carpeta); print(res.stdout); print(res.stderr)
+
+    res = _run([vercel, "--prod", "--yes"], cwd=carpeta); _imprimir_salida(res)
     if res.returncode != 0:
         _note(df, idx, f"Error vercel: {_msg(res)}"); guardar_excel(df, archivo); return resumen
     url = _extraer_url((res.stdout or "") + "\n" + (res.stderr or "")); resumen["vercel"] = url
