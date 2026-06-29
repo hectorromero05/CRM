@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 from buscar_maps import (
     DESKTOP_USER_AGENT,
     DESKTOP_VIEWPORT,
+    abrir_tab_opiniones,
     extraer_rating,
     limpiar,
     preparar_vista_maps_escritorio,
@@ -67,6 +68,54 @@ def _short(value):
     return value if value and len(value) < MAX_LEN else ""
 
 
+
+def inspeccionar_vista(page, lines, nombre_vista):
+    lines.append(f"\n##### Inspeccionando {nombre_vista} #####")
+    h1 = _visible_text(page.locator("h1").first)
+    lines.append("\n=== h1 ===")
+    lines.append(h1 or "(sin h1 visible)")
+
+    rating = extraer_rating(page)
+    lines.append("\n=== rating detectado ===")
+    lines.append(rating or "(sin rating detectado)")
+
+    textos = []
+    for selector in "span", "button", "a", "div[role='button']", "[role='img']":
+        try:
+            elementos = page.locator(selector).all()[:700]
+        except Exception:
+            continue
+        for elemento in elementos:
+            texto = _short(_visible_text(elemento))
+            if texto:
+                textos.append(texto)
+
+    arias = []
+    try:
+        elementos_aria = page.locator("[aria-label]").all()[:900]
+    except Exception:
+        elementos_aria = []
+    for elemento in elementos_aria:
+        aria = _short(_aria_label(elemento))
+        if aria:
+            arias.append(aria)
+
+    filtros = [
+        t for t in textos
+        if "(" in t
+        or any(k in t.lower() for k in REVIEW_KEYWORDS)
+        or (rating and any(r in t for r in {rating, rating.replace(".", ",")}))
+    ]
+    _section(lines, "textos cortos con rating/paréntesis/reseñas/opiniones/reviews", filtros)
+    _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con "(" y ")"', [t for t in textos if "(" in t and ")" in t])
+    if rating:
+        variantes_rating = {rating, rating.replace(".", ",")}
+        _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con rating {rating}', [t for t in textos if any(r in t for r in variantes_rating)])
+    else:
+        _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con rating', [])
+    _section(lines, f'aria-label menores de {MAX_LEN} caracteres con "(" y ")"', [a for a in arias if "(" in a and ")" in a])
+    _section(lines, "aria-label con rating/stars/estrellas/reviews/reseñas/opiniones", [a for a in arias if any(k in a.lower() for k in REVIEW_KEYWORDS)])
+
 def diagnosticar_reviews(url):
     lines = []
     with sync_playwright() as p:
@@ -83,50 +132,15 @@ def diagnosticar_reviews(url):
         lines.append(f"URL inspeccionada: {page.url}")
         lines.append(f"Viewport usado: {DESKTOP_VIEWPORT}")
         lines.append(f"User agent usado: {DESKTOP_USER_AGENT}")
-        h1 = _visible_text(page.locator("h1").first)
-        lines.append("\n=== h1 ===")
-        lines.append(h1 or "(sin h1 visible)")
 
-        rating = extraer_rating(page)
-        lines.append("\n=== rating detectado ===")
-        lines.append(rating or "(sin rating detectado)")
-
-        textos = []
-        for selector in "span", "button", "a", "div[role='button']", "[role='img']":
-            try:
-                elementos = page.locator(selector).all()[:700]
-            except Exception:
-                continue
-            for elemento in elementos:
-                texto = _short(_visible_text(elemento))
-                if texto:
-                    textos.append(texto)
-
-        arias = []
-        try:
-            elementos_aria = page.locator("[aria-label]").all()[:900]
-        except Exception:
-            elementos_aria = []
-        for elemento in elementos_aria:
-            aria = _short(_aria_label(elemento))
-            if aria:
-                arias.append(aria)
-
-        filtros = [
-            t for t in textos
-            if "(" in t
-            or any(k in t.lower() for k in REVIEW_KEYWORDS)
-            or (rating and any(r in t for r in {rating, rating.replace(".", ",")}))
-        ]
-        _section(lines, "textos cortos con rating/paréntesis/reseñas/opiniones/reviews", filtros)
-        _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con "(" y ")"', [t for t in textos if "(" in t and ")" in t])
-        if rating:
-            variantes_rating = {rating, rating.replace(".", ",")}
-            _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con rating {rating}', [t for t in textos if any(r in t for r in variantes_rating)])
-        else:
-            _section(lines, f'textos visibles menores de {MAX_LEN} caracteres con rating', [])
-        _section(lines, f'aria-label menores de {MAX_LEN} caracteres con "(" y ")"', [a for a in arias if "(" in a and ")" in a])
-        _section(lines, "aria-label con rating/stars/estrellas/reviews/reseñas/opiniones", [a for a in arias if any(k in a.lower() for k in REVIEW_KEYWORDS)])
+        inspeccionar_vista(page, lines, "vista principal")
+        lines.append("\nReseñas desde vista principal: ver candidatos anteriores")
+        lines.append("Abriendo pestaña opiniones...")
+        abierta = abrir_tab_opiniones(page)
+        lines.append(f"Pestaña opiniones abierta: {abierta}")
+        if abierta:
+            time.sleep(1)
+        inspeccionar_vista(page, lines, "vista opiniones")
         context.close()
         browser.close()
 
