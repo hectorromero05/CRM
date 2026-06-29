@@ -34,10 +34,12 @@ GOOGLE_DOMINIOS_IGNORADOS = (
 )
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
 RESENAS_PARENTESIS_REGEX = re.compile(r"\(([\d\.,]+)\)")
-RESENAS_TEXTO_REGEX = re.compile(r"([\d\.,]+)\s*(?:reviews?|reseñas|resenas|opiniones)", re.I)
+RESENAS_TEXTO_REGEX = re.compile(r"([\d\.,]+)\s*(opiniones|reseñas|resenas|reviews?)", re.I)
+RESENAS_PESTANA_REGEX = re.compile(r"(opiniones|reseñas|resenas|reviews?)\s*\(([\d\.,]+)\)", re.I)
 DESKTOP_VIEWPORT = {"width": 1600, "height": 1000}
 DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-RESENAS_DOM_NOTA = "Google Maps no mostró número de reseñas en DOM"
+RESENAS_DOM_NOTA = "Google Maps no mostró número total de reseñas en DOM"
+RESENAS_APROX_NOTA = "Reseñas aproximadas visibles, no total exacto"
 
 
 def normalizar_nombre(valor):
@@ -73,8 +75,7 @@ def extraer_registro_desde_pagina(page, google_maps_url, nicho="Google Maps URL"
     nombre = extraer_nombre(page)
     if not nombre:
         raise ValueError("No se pudo extraer el nombre del negocio desde Google Maps.")
-    resenas = extraer_resenas(page)
-    nota_resenas = RESENAS_DOM_NOTA if resenas == 0 else ""
+    resenas, nota_resenas = extraer_resenas_con_nota(page)
     registro = {
         "Nombre": nombre,
         "Nicho": nicho,
@@ -355,10 +356,15 @@ def _extraer_resenas_desde_texto(texto):
     texto = _texto_corto_resenas(texto)
     if not texto:
         return 0
-    for regex in (RESENAS_TEXTO_REGEX, RESENAS_PARENTESIS_REGEX):
-        match = regex.search(texto)
-        if match:
-            return limpiar_numero_resenas(match.group(1))
+    match = RESENAS_TEXTO_REGEX.search(texto)
+    if match:
+        return limpiar_numero_resenas(match.group(1))
+    match = RESENAS_PESTANA_REGEX.search(texto)
+    if match:
+        return limpiar_numero_resenas(match.group(2))
+    match = RESENAS_PARENTESIS_REGEX.search(texto)
+    if match:
+        return limpiar_numero_resenas(match.group(1))
     return 0
 
 
@@ -392,8 +398,72 @@ def _iter_textos_resenas_visibles(page):
             yield texto
 
 
-def extraer_resenas(page):
-    """Extrae reseñas desde textos/aria-labels cortos visibles detectables con debug_reviews.py."""
+def abrir_tab_opiniones(page):
+    """Abre la pestaña Opiniones/Reseñas/Reviews si está disponible."""
+    selectores = [
+        "button[role='tab']",
+        "button[aria-label*='Opiniones' i]",
+        "button[aria-label*='Reseñas' i]",
+        "button[aria-label*='Reviews' i]",
+        "div[role='tab']",
+        "a[role='tab']",
+        "button",
+    ]
+    regex_tab = re.compile(r"\b(opiniones|reseñas|resenas|reviews)\b", re.I)
+    for selector in selectores:
+        try:
+            elementos = page.locator(selector).all()[:80]
+        except Exception:
+            continue
+        for elemento in elementos:
+            texto = texto_locator(elemento, timeout=500)
+            aria = atributo_locator(elemento, "aria-label", timeout=500)
+            if not regex_tab.search(f"{texto} {aria}"):
+                continue
+            try:
+                elemento.click(timeout=3000)
+                time.sleep(4)
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def _contar_tarjetas_resenas_visibles(page):
+    selectores = [
+        "div[data-review-id]:visible",
+        "div[jscontroller][aria-label*='estrellas' i]:visible",
+        "div[jscontroller][aria-label*='stars' i]:visible",
+        "div[role='article']:visible",
+    ]
+    for selector in selectores:
+        try:
+            cantidad = page.locator(selector).count()
+        except Exception:
+            cantidad = 0
+        if cantidad:
+            return cantidad
+    return 0
+
+
+def extraer_resenas_desde_opiniones(page):
+    """Extrae el total de reseñas desde la vista Opiniones ya abierta."""
+    for texto in _iter_textos_resenas_visibles(page):
+        print(f"Texto candidato opiniones: {texto}")
+        resenas = _extraer_resenas_desde_texto(texto)
+        if resenas:
+            print(f"Reseñas extraídas desde opiniones: {resenas}")
+            return resenas, ""
+    visibles = _contar_tarjetas_resenas_visibles(page)
+    if visibles:
+        print(f"Reseñas extraídas desde opiniones: {visibles}")
+        return visibles, RESENAS_APROX_NOTA
+    print("Reseñas extraídas desde opiniones: 0")
+    return 0, RESENAS_DOM_NOTA
+
+
+def extraer_resenas_con_nota(page):
+    """Extrae reseñas y nota de confiabilidad sin romper los demás datos del negocio."""
     rating, texto_rating = _obtener_rating_y_texto(page)
     candidatos = [texto_rating, *_iter_textos_resenas_visibles(page)]
     for texto in candidatos:
@@ -404,11 +474,20 @@ def extraer_resenas(page):
         resenas = _extraer_resenas_desde_texto(texto)
         if resenas:
             print(f"Reseñas:\n{resenas}")
-            return resenas
+            return resenas, ""
 
-    print("Reseñas:\n0")
-    return 0
+    print("Reseñas desde vista principal: 0")
+    print("Abriendo pestaña opiniones...")
+    if abrir_tab_opiniones(page):
+        return extraer_resenas_desde_opiniones(page)
+    print("Reseñas extraídas desde opiniones: 0")
+    return 0, RESENAS_DOM_NOTA
 
+
+def extraer_resenas(page):
+    """Extrae reseñas desde la vista principal y, si hace falta, desde Opiniones."""
+    resenas, _ = extraer_resenas_con_nota(page)
+    return resenas
 
 def extraer_direccion(page):
     for selector in ['[aria-label*="Dirección"]', '[aria-label*="Address"]', 'button[data-item-id="address"]']:
@@ -454,8 +533,7 @@ def extraer_detalle(page, link, busqueda):
     if not nombre:
         return None
     telefono = extraer_telefono(page)
-    resenas = extraer_resenas(page)
-    nota_resenas = RESENAS_DOM_NOTA if resenas == 0 else ""
+    resenas, nota_resenas = extraer_resenas_con_nota(page)
     print(f"Telefono encontrado: {telefono}")
     return {
         "Nombre": nombre,
