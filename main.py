@@ -4,6 +4,7 @@ from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, gen
 from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demos_lote, prospectos_para_demo_lote
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
+from visual_analyzer import analizar_perfil_visual
 
 
 def ver(df=None, filtro=None):
@@ -83,6 +84,13 @@ def crear_proyecto_cliente_cli():
     df = asegurar_excel()
     ver(df)
     idp = input("ID del prospecto para crear proyecto del cliente: ").strip()
+    fila = df[df["ID"].astype(str) == idp]
+    if not fila.empty:
+        perfil = analizar_perfil_visual(fila.iloc[0].to_dict())
+        print("Perfil visual generado:")
+        print(f"- Concepto: {perfil.get('concepto_visual', '')}")
+        print(f"- Layout: {perfil.get('layout', '')}")
+        print(f"- Colores: {', '.join(perfil.get('colores', []))}")
     crear_proyecto_cliente(idp)
 
 

@@ -10,6 +10,7 @@ import streamlit as st
 from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
+from visual_analyzer import analizar_perfil_visual
 
 CONFIG_PATH = Path("config.json")
 EXPORT_DIR = Path("exports")
@@ -230,6 +231,11 @@ elif section == "Crear proyecto":
         options = [f"{row.ID} - {row.Nombre}" for row in df[["ID", "Nombre"]].itertuples(index=False)]
         selected = st.selectbox("Selector de prospecto por ID o nombre", options)
         id_prospecto = selected.split(" - ", 1)[0]
+        prospecto_preview = df[df["ID"].astype(str) == str(id_prospecto)]
+        if not prospecto_preview.empty:
+            with st.expander("Perfil visual que se incluirá en restaurant.json y codex_task.md"):
+                st.json(analizar_perfil_visual(prospecto_preview.iloc[0].to_dict()))
+
         if st.button("Crear proyecto", type="primary"):
             with st.spinner("Creando carpeta, archivos Codex, repo GitHub y push..."):
                 resumen = crear_proyecto_cliente(id_prospecto)
