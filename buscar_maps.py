@@ -13,7 +13,9 @@ from crm_utils import (
     NICHOS,
     ZONAS,
     asegurar_excel,
+    calcular_prioridad,
     clasificar_prioridad,
+    DOMINIOS_WEB_IGNORADOS,
     encontrar_duplicado,
     fusionar_registro,
     guardar_excel,
@@ -24,14 +26,7 @@ from crm_utils import (
 )
 
 MAX_POR_BUSQUEDA = 40
-GOOGLE_DOMINIOS_IGNORADOS = (
-    "google.com",
-    "gstatic.com",
-    "ggpht.com",
-    "maps.google.com",
-    "support.google.com",
-    "business.google.com",
-)
+GOOGLE_DOMINIOS_IGNORADOS = DOMINIOS_WEB_IGNORADOS
 TELEFONO_REGEX = re.compile(r"(?:\+52\s*)?(?:\(?\d{2,3}\)?[\s\-]*)?\d{3,4}[\s\-]*\d{4}")
 RESENAS_PARENTESIS_REGEX = re.compile(r"\(([\d\.,]+)\)")
 RESENAS_TEXTO_REGEX = re.compile(r"([\d\.,]+)\s*(opiniones|reseñas|resenas|reviews?)", re.I)
@@ -55,7 +50,10 @@ def _actualizar_datos_faltantes(df, idx, registro):
         if columna in df.columns and str(valor or "").strip() and _valor_vacio(df.at[idx, columna]):
             df.at[idx, columna] = valor
     df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
-    df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
+    prioridad = calcular_prioridad(df.loc[idx].to_dict())
+    df.at[idx, "Prioridad"] = prioridad["Prioridad"]
+    df.at[idx, "Puntaje_Prioridad"] = prioridad["Puntaje_Prioridad"]
+    df.at[idx, "Motivo_Prioridad"] = prioridad["Motivo_Prioridad"]
     return df
 
 
@@ -91,7 +89,10 @@ def extraer_registro_desde_pagina(page, google_maps_url, nicho="Google Maps URL"
         "Fecha_busqueda": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
-    registro["Prioridad"] = clasificar_prioridad(registro)
+    prioridad = calcular_prioridad(registro)
+    registro["Prioridad"] = prioridad["Prioridad"]
+    registro["Puntaje_Prioridad"] = prioridad["Puntaje_Prioridad"]
+    registro["Motivo_Prioridad"] = prioridad["Motivo_Prioridad"]
     return registro
 
 
@@ -499,15 +500,26 @@ def extraer_direccion(page):
 
 
 def extraer_sitio_web(page):
+    sitio_detectado = ""
     try:
-        for enlace in page.locator('a[href^="http"]').all()[:200]:
-            href = enlace.get_attribute("href") or ""
-            dominio = urlparse(href).netloc.lower().replace("www.", "")
-            if dominio and not any(ignorado in dominio for ignorado in GOOGLE_DOMINIOS_IGNORADOS):
-                return href.split("?")[0]
+        for enlace in page.locator('a[href^="http"]').all()[:250]:
+            href = (enlace.get_attribute("href") or "").strip()
+            if not href:
+                continue
+            parsed = urlparse(href)
+            dominio = parsed.netloc.lower().replace("www.", "")
+            if not dominio or "." not in dominio:
+                continue
+            href_lower = href.lower()
+            if any(ignorado in dominio or ignorado in href_lower for ignorado in GOOGLE_DOMINIOS_IGNORADOS):
+                continue
+            sitio_detectado = href.split("?")[0]
+            break
     except Exception:
-        pass
-    return ""
+        sitio_detectado = ""
+    print(f"Sitio web detectado: {sitio_detectado}")
+    print(f"Tiene web real: {tiene_web(sitio_detectado)}")
+    return sitio_detectado
 
 
 def extraer_horario(page):

@@ -21,6 +21,18 @@ DEFAULT_CONFIG = {
     "configuracion_vercel": "",
 }
 
+COLUMNAS_VISIBLES = [
+    "Prioridad", "Puntaje_Prioridad", "Motivo_Prioridad", "Tiene_web", "Sitio_web", "Resenas",
+    "ID", "Nombre", "Nicho", "Telefono", "Rating", "Direccion", "Horario", "Categoria", "Estado",
+    "Demo", "Repositorio_GitHub", "Vercel_URL", "Google_Maps", "Notas", "Fecha_busqueda",
+]
+
+
+def ordenar_columnas_clave(df):
+    primeras = [col for col in COLUMNAS_VISIBLES if col in df.columns]
+    restantes = [col for col in df.columns if col not in primeras]
+    return df[primeras + restantes]
+
 
 def load_config():
     if CONFIG_PATH.exists():
@@ -76,7 +88,7 @@ def export_excel(df, name):
     if "Resenas" not in df.columns:
         df["Resenas"] = 0
     df["Resenas"] = pd.to_numeric(df["Resenas"], errors="coerce").fillna(0).astype(int)
-    df.to_excel(path, index=False)
+    ordenar_columnas_clave(df).to_excel(path, index=False)
     return path
 
 
@@ -103,7 +115,7 @@ if section == "Dashboard":
     if search:
         mask = base.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)
         base = base[mask]
-    st.dataframe(base, use_container_width=True, hide_index=True)
+    st.dataframe(ordenar_columnas_clave(base), use_container_width=True, hide_index=True)
 
 elif section == "Buscar prospectos":
     st.header("Buscar prospectos")
@@ -131,7 +143,7 @@ elif section == "Buscar prospectos":
             progress.progress(100, text="Búsqueda finalizada")
             after_df = load_prospectos()
             st.success(f"Búsqueda terminada. Registros antes: {before}. Registros ahora: {len(after_df)}.")
-            st.dataframe(after_df.tail(20), use_container_width=True)
+            st.dataframe(ordenar_columnas_clave(after_df.tail(20)), use_container_width=True)
         except Exception as exc:
             progress.progress(100, text="Búsqueda interrumpida")
             st.error(f"No se pudo completar la búsqueda: {exc}")
@@ -176,6 +188,9 @@ elif section == "Agregar por Google Maps":
                     "Rating": registro.get("Rating", ""),
                     "Reseñas": registro.get("Resenas", ""),
                     "Prioridad": registro.get("Prioridad", ""),
+                    "Puntaje_Prioridad": registro.get("Puntaje_Prioridad", ""),
+                    "Motivo_Prioridad": registro.get("Motivo_Prioridad", ""),
+                    "Sitio_web": registro.get("Sitio_web", ""),
                     "Dirección": registro.get("Direccion", ""),
                 })
                 after_df = load_prospectos()
@@ -204,7 +219,7 @@ elif section == "Ver prospectos":
 
     filtered = apply_filters(df, prioridad, estado, tiene_web, nicho)
     st.caption(f"Mostrando {len(filtered)} de {len(df)} prospectos")
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
+    st.dataframe(ordenar_columnas_clave(filtered), use_container_width=True, hide_index=True)
 
 elif section == "Crear proyecto":
     st.header("Crear proyecto del cliente")
