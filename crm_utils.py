@@ -1,6 +1,7 @@
 import os
 import re
 import unicodedata
+from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +12,7 @@ ARCHIVO_EXCEL = "prospectos_restaurantes.xlsx"
 COLUMNAS = [
     "ID", "Nombre", "Nicho", "Telefono", "Tiene_web", "Sitio_web", "Rating", "Resenas",
     "Direccion", "Horario", "Categoria", "Google_Maps", "Posible_duplicado", "Prioridad",
+    "Puntaje_Prioridad", "Motivo_Prioridad",
     "Estado", "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
     "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
     "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
@@ -77,6 +79,7 @@ def asegurar_excel(ruta=ARCHIVO_EXCEL):
         "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
         "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
+        "Motivo_Prioridad",
     ]
     df = pd.read_excel(ruta, dtype={col: object for col in texto_columnas})
     for columna in COLUMNAS:
@@ -99,12 +102,16 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
         "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
         "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
+        "Motivo_Prioridad",
     ]:
         if columna in df.columns:
             df[columna] = df[columna].fillna("").astype("object")
     for idx in df.index:
         df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
-        df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
+        prioridad = calcular_prioridad(df.loc[idx].to_dict())
+        df.at[idx, "Prioridad"] = prioridad["Prioridad"]
+        df.at[idx, "Puntaje_Prioridad"] = prioridad["Puntaje_Prioridad"]
+        df.at[idx, "Motivo_Prioridad"] = prioridad["Motivo_Prioridad"]
     df = marcar_posibles_duplicados(df)
     df = df[COLUMNAS]
     df.to_excel(ruta, index=False)
@@ -117,25 +124,96 @@ def siguiente_id(df):
     return int(ids.max()) + 1 if not ids.empty else 1
 
 
+DOMINIOS_WEB_IGNORADOS = (
+    "google.com", "maps.google", "gstatic.com", "ggpht.com", "googleusercontent.com",
+    "business.google", "support.google", "schema.org", "wa.me", "whatsapp",
+    "facebook.com", "instagram.com", "tiktok.com", "ubereats", "rappi", "didi-food",
+    "menu", "linktr.ee", "beacons.ai",
+)
+
+NICHOS_OBJETIVO_PRIORIDAD = (
+    "restaurante", "mariscos", "taqueria", "cafeteria", "desayunos", "sushi",
+    "ramen", "pizza", "hamburguesas", "bar", "parrilla",
+)
+
+FRANQUICIAS_GRANDES = (
+    "mcdonald", "burger king", "kfc", "starbucks", "domino", "subway", "pizza hut",
+    "little caesars", "carls jr", "toks", "vips", "ihop", "chilis", "applebee",
+)
+
+
+def sitio_web_real(sitio):
+    sitio = str(sitio or "").strip()
+    if not sitio:
+        return False
+    parsed = urlparse(sitio if re.match(r"^https?://", sitio, re.I) else f"https://{sitio}")
+    dominio = (parsed.netloc or parsed.path.split("/", 1)[0]).lower().replace("www.", "")
+    if not dominio or "." not in dominio:
+        return False
+    return not any(ignorado in dominio or ignorado in sitio.lower() for ignorado in DOMINIOS_WEB_IGNORADOS)
+
+
 def tiene_web(sitio):
-    return "sí" if str(sitio or "").strip() else "no"
+    return "sí" if sitio_web_real(sitio) else "no"
+
+
+def _coincide(texto, opciones):
+    texto = normalizar_texto(texto)
+    return any(opcion in texto for opcion in opciones)
+
+
+def calcular_prioridad(prospecto):
+    web_real = sitio_web_real(prospecto.get("Sitio_web")) or normalizar_texto(prospecto.get("Tiene_web")) in {"si", "sí"}
+    telefono = bool(normalizar_telefono(prospecto.get("Telefono")))
+    rating = parse_float(prospecto.get("Rating"))
+    resenas = parse_int(prospecto.get("Resenas"))
+    categoria_nicho = f"{prospecto.get('Categoria', '')} {prospecto.get('Nicho', '')}"
+    direccion = bool(str(prospecto.get("Direccion") or "").strip())
+    horario = bool(str(prospecto.get("Horario") or "").strip())
+    fotos = any(str(prospecto.get(c) or "").strip() for c in ("Fotos", "Foto", "Imagen", "Imagen_Principal", "Imagen_principal"))
+    franquicia = _coincide(f"{prospecto.get('Nombre', '')} {categoria_nicho}", FRANQUICIAS_GRANDES)
+
+    puntos, razones = 0, []
+    def add(valor, razon):
+        nonlocal puntos
+        puntos += valor; razones.append(razon)
+
+    add(-3 if web_real else 3, "ya tiene sitio web real" if web_real else "sin web real")
+    add(3 if telefono else -2, "tiene teléfono" if telefono else "sin teléfono")
+    if rating >= 4.5: add(2, f"rating {rating:g}")
+    elif rating >= 4.0: add(1, f"rating {rating:g}")
+    elif rating < 4.0 and rating != 0: add(-2, f"rating bajo {rating:g}")
+    if resenas >= 200: add(2, f"{resenas} reseñas")
+    elif resenas >= 80: add(1, f"{resenas} reseñas")
+    elif resenas == 0 and rating >= 4.5 and telefono: add(1, "reseñas no disponibles con buen rating y teléfono")
+    elif resenas < 30 and resenas != 0: add(-1, f"pocas reseñas ({resenas})")
+    if _coincide(categoria_nicho, NICHOS_OBJETIVO_PRIORIDAD): add(2, "nicho objetivo")
+    if direccion: add(1, "dirección completa")
+    if horario: add(1, "horario visible")
+    if fotos: add(1, "tiene fotos")
+    if franquicia: add(-2, "parece franquicia grande")
+
+    if puntos >= 8: prioridad = "Alta"
+    elif puntos >= 5: prioridad = "Media"
+    else: prioridad = "Baja"
+
+    if web_real and prioridad != "Baja":
+        prioridad = "Media" if prospecto.get("Sitio_web_Malo") or prospecto.get("Web_no_carga") else "Baja"
+    if not web_real and telefono and rating >= 4.5 and prioridad != "Alta" and puntos >= 7:
+        prioridad = "Alta"
+    if not web_real and telefono and rating >= 4.0 and prioridad == "Baja":
+        prioridad = "Media"
+    if not telefono and prioridad == "Alta":
+        prioridad = "Media"
+    if not web_real and not telefono and prioridad == "Alta":
+        prioridad = "Media"
+
+    motivo = f"{prioridad}: " + ", ".join(razones[:5])
+    return {"Prioridad": prioridad, "Puntaje_Prioridad": puntos, "Motivo_Prioridad": motivo}
 
 
 def clasificar_prioridad(registro):
-    web = normalizar_texto(registro.get("Tiene_web") or tiene_web(registro.get("Sitio_web")))
-    telefono = bool(normalizar_telefono(registro.get("Telefono")))
-    rating = parse_float(registro.get("Rating"))
-    resenas = parse_int(registro.get("Resenas"))
-
-    if web in {"si", "sí"}:
-        return "Baja"
-    if telefono and ((rating >= 4.3 and resenas >= 80) or (rating >= 4.0 and resenas > 200)):
-        return "Alta"
-    if telefono and (rating > 0 or resenas > 0):
-        return "Media"
-    if not telefono and rating >= 4.3 and resenas >= 80:
-        return "Media"
-    return "Baja"
+    return calcular_prioridad(registro)["Prioridad"]
 
 
 def preparar_registro(datos, nuevo_id):
@@ -143,7 +221,10 @@ def preparar_registro(datos, nuevo_id):
     registro["ID"] = datos.get("ID") or nuevo_id
     registro["Tiene_web"] = tiene_web(registro.get("Sitio_web"))
     registro["Posible_duplicado"] = registro.get("Posible_duplicado") or "no"
-    registro["Prioridad"] = clasificar_prioridad(registro)
+    prioridad = calcular_prioridad(registro)
+    registro["Prioridad"] = prioridad["Prioridad"]
+    registro["Puntaje_Prioridad"] = prioridad["Puntaje_Prioridad"]
+    registro["Motivo_Prioridad"] = prioridad["Motivo_Prioridad"]
     registro["Estado"] = registro.get("Estado") or "Pendiente"
     registro["Fecha_busqueda"] = registro.get("Fecha_busqueda") or datetime.now().strftime("%Y-%m-%d %H:%M")
     return registro
@@ -201,7 +282,10 @@ def fusionar_registro(df, registro):
         if columna in df.columns and str(valor or "").strip() and not str(df.at[idx, columna] or "").strip():
             df.at[idx, columna] = valor
     df.at[idx, "Tiene_web"] = tiene_web(df.at[idx, "Sitio_web"])
-    df.at[idx, "Prioridad"] = clasificar_prioridad(df.loc[idx].to_dict())
+    prioridad = calcular_prioridad(df.loc[idx].to_dict())
+    df.at[idx, "Prioridad"] = prioridad["Prioridad"]
+    df.at[idx, "Puntaje_Prioridad"] = prioridad["Puntaje_Prioridad"]
+    df.at[idx, "Motivo_Prioridad"] = prioridad["Motivo_Prioridad"]
     if "Posible_duplicado" in df.columns:
         df.at[idx, "Posible_duplicado"] = "no"
     return marcar_posibles_duplicados(df), False
