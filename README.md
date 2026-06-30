@@ -228,12 +228,14 @@ python main.py
 
 Luego entra a **Verificar WhatsApp**. Las opciones disponibles son:
 
-1. Verificar un prospecto por ID.
-2. Verificar próximos 20 prospectos de prioridad Alta.
-3. Verificar prospectos seleccionados por IDs.
-4. Ver resultados de WhatsApp.
+1. Filtrar prospectos por prioridad, estado y estado de WhatsApp.
+2. Elegir la cantidad exacta a verificar, de 1 a 50 prospectos, con 10 como valor inicial.
+3. Ver antes de ejecutar cuántos prospectos se verificarán y la tabla filtrada con ID, nombre, teléfono, prioridad, estado, WhatsApp, fecha de verificación y error.
+4. Verificar IDs manuales separados por coma, por ejemplo `12,45,88`.
+5. Verificar solo 1 prospecto de prueba antes de ejecutar un lote.
+6. Reiniciar la sesión de WhatsApp renombrando de forma segura el perfil local `.whatsapp_profile`.
 
-No existe una opción para verificar todos los prospectos.
+No existe una opción automática para verificar todos los prospectos sin filtros y confirmación.
 
 ### Desde Streamlit
 
@@ -243,7 +245,11 @@ Ejecuta:
 streamlit run app.py
 ```
 
-Abre la sección **Verificar WhatsApp** para ver métricas de pendientes, WhatsApp Sí, WhatsApp No y errores. También puedes verificar los próximos 20 prospectos de prioridad Alta o ingresar IDs específicos.
+Abre la sección **Verificar WhatsApp** para ver métricas de pendientes, WhatsApp Sí, WhatsApp No y errores. Desde ahí puedes seleccionar filtros de prioridad (`Todas`, `Alta`, `Media`, `Baja`), estado (`Todos`, `Pendiente`, `Contactado`, `Respondió`, `Interesado`, `Demo enviada`, `Negociación`) y WhatsApp (`Pendiente`, `Sí`, `No`, `Error`, `Todos`). También puedes indicar la **cantidad a verificar** con un campo numérico de 1 a 50, cuyo valor inicial es 10.
+
+Antes de ejecutar, la app muestra `Se verificarán X prospectos`. Si no hay coincidencias, muestra `No hay prospectos que coincidan con los filtros`. La tabla previa solo muestra los prospectos que coinciden con los filtros y usa las columnas ID, nombre, teléfono, prioridad, estado, WhatsApp, fecha de verificación y error.
+
+Para una selección manual, usa el campo **IDs separados por coma** con valores como `12,45,88` y pulsa **Verificar IDs**. También puedes pulsar **Verificar solo 1 de prueba** para validar la sesión antes de un lote, o **Reiniciar sesión WhatsApp** para renombrar el perfil local `.whatsapp_profile` y empezar una sesión nueva.
 
 ### Columnas de Excel
 
@@ -256,8 +262,10 @@ La verificación agrega y actualiza estas columnas en `prospectos_restaurantes.x
 ### Reglas de seguridad aplicadas
 
 - Solo verifica prospectos con teléfono.
-- No vuelve a verificar prospectos ya marcados como `Sí` o `No`, salvo confirmación/selección explícita.
-- Procesa máximo 20 verificaciones por corrida por defecto.
+- No vuelve a verificar prospectos ya marcados como `Sí` o `No`, salvo confirmación explícita cuando el filtro WhatsApp está en `Todos` o cuando se confirman IDs manuales.
+- Guarda el Excel después de cada verificación individual.
+- Procesa la cantidad seleccionada por el usuario, con límite de 1 a 50 y valor inicial de 10.
+- Captura errores de Playwright en Streamlit y los muestra con `st.error` para evitar que la app se caiga.
 - Espera entre 4 y 9 segundos aleatorios entre verificaciones.
 - Cada 10 verificaciones realiza una pausa larga de 30 a 60 segundos.
 - Guarda el Excel después de cada verificación.
