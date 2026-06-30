@@ -1,5 +1,6 @@
 import random
 import re
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -58,8 +59,8 @@ def _sesion_whatsapp():
         page.wait_for_selector("div[contenteditable='true'][role='textbox'], canvas[aria-label*='Scan'], canvas", timeout=15000)
     except PlaywrightTimeoutError:
         pass
-    if page.locator("canvas").count() and not page.locator("div[contenteditable='true'][role='textbox']").count():
-        input("Inicia sesión escaneando el QR y presiona Enter para continuar.")
+    # En Streamlit no hay consola interactiva; si aparece QR, la UI mostrará el error
+    # resultante y el usuario puede reiniciar/iniciar sesión sin bloquear la app.
     return playwright, context, page
 
 
@@ -84,22 +85,36 @@ def verificar_whatsapp_numero(page, telefono):
     return WHATSAPP_ERROR, "No se pudo determinar si el chat existe"
 
 
+def reiniciar_sesion_whatsapp():
+    """Renombra de forma segura el perfil local de WhatsApp Web."""
+    if not PERFIL_WHATSAPP.exists():
+        return None
+    destino = PERFIL_WHATSAPP.with_name(f"{PERFIL_WHATSAPP.name}.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    shutil.move(str(PERFIL_WHATSAPP), str(destino))
+    return destino
+
+
 def verificar_whatsapp_por_id(id_prospecto, forzar=False):
     return verificar_whatsapp_lote(ids=[str(id_prospecto)], maximo=1, prioridad=None, forzar=forzar)
 
 
-def verificar_whatsapp_lote(ids=None, maximo=20, prioridad="Alta", forzar=False):
+def verificar_whatsapp_lote(maximo=10, prioridad=None, estado=None, whatsapp_estado=WHATSAPP_PENDIENTE, ids=None, forzar=False):
     df = _asegurar_columnas_whatsapp(asegurar_excel(ARCHIVO_EXCEL))
-    maximo = min(int(maximo or 20), 20)
+    maximo = max(1, min(int(maximo or 10), 50))
     candidatos = df.copy()
     if ids is not None:
         ids_set = {str(i).strip() for i in ids if str(i).strip()}
         candidatos = candidatos[candidatos["ID"].astype(str).isin(ids_set)]
-    elif prioridad:
-        candidatos = candidatos[candidatos["Prioridad"].fillna("").astype(str).str.lower() == prioridad.lower()]
+    else:
+        if prioridad is not None:
+            candidatos = candidatos[candidatos["Prioridad"].fillna("").astype(str).str.lower() == str(prioridad).lower()]
+        if estado is not None:
+            candidatos = candidatos[candidatos["Estado"].fillna("").astype(str).str.lower() == str(estado).lower()]
+        if whatsapp_estado is not None and whatsapp_estado != "Todos":
+            candidatos = candidatos[candidatos["WhatsApp"].fillna(WHATSAPP_PENDIENTE).replace("", WHATSAPP_PENDIENTE).astype(str).str.lower() == str(whatsapp_estado).lower()]
     candidatos = candidatos[candidatos["Telefono"].fillna("").astype(str).str.strip().ne("")]
     if not forzar:
-        candidatos = candidatos[~candidatos["WhatsApp"].fillna(WHATSAPP_PENDIENTE).astype(str).isin([WHATSAPP_SI, WHATSAPP_NO])]
+        candidatos = candidatos[~candidatos["WhatsApp"].fillna(WHATSAPP_PENDIENTE).replace("", WHATSAPP_PENDIENTE).astype(str).isin([WHATSAPP_SI, WHATSAPP_NO])]
     candidatos = candidatos.head(maximo)
 
     resultados = []

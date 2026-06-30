@@ -11,7 +11,7 @@ from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, gen
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel, guardar_excel
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
 from visual_analyzer import analizar_perfil_visual
-from whatsapp_checker import verificar_whatsapp_lote
+from whatsapp_checker import reiniciar_sesion_whatsapp, verificar_whatsapp_lote
 
 CONFIG_PATH = Path("config.json")
 EXPORT_DIR = Path("exports")
@@ -427,9 +427,11 @@ elif section == "Verificar WhatsApp":
     st.header("Verificar WhatsApp")
     st.warning("Esta función solo verifica disponibilidad. No envía mensajes. Se recomienda revisar máximo 20-50 números por sesión.")
     df = load_prospectos()
-    if "WhatsApp" not in df.columns:
-        df["WhatsApp"] = "Pendiente"
-    wa = df["WhatsApp"].fillna("").replace("", "Pendiente").astype(str)
+    for columna in ["WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]:
+        if columna not in df.columns:
+            df[columna] = ""
+    df["WhatsApp"] = df["WhatsApp"].fillna("").replace("", "Pendiente").astype(str)
+    wa = df["WhatsApp"]
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total pendientes", int(wa.eq("Pendiente").sum()))
     c2.metric("WhatsApp Sí", int(wa.eq("Sí").sum()))
@@ -437,33 +439,108 @@ elif section == "Verificar WhatsApp":
     c4.metric("Errores", int(wa.eq("Error").sum()))
 
     st.caption("Usa una sesión iniciada de WhatsApp Web. La verificación abre chats, pero no escribe ni envía mensajes.")
-    if st.button("Verificar próximos 20 Alta", type="primary"):
-        with st.spinner("Verificando hasta 20 prospectos de prioridad Alta..."):
-            resultados = verificar_whatsapp_lote(maximo=20, prioridad="Alta")
-        st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
-        st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
-        st.rerun()
 
-    ids_txt = st.text_input("IDs específicos", placeholder="Ejemplo: 201,205,208")
-    col_ids, col_force = st.columns([1, 1])
-    with col_force:
-        forzar = st.checkbox("Volver a verificar aunque ya tengan Sí/No", value=False)
-    with col_ids:
-        if st.button("Verificar IDs específicos"):
-            ids = normalize_list(ids_txt)
-            if not ids:
-                st.warning("Ingresa al menos un ID.")
-            else:
-                with st.spinner("Verificando IDs seleccionados..."):
-                    resultados = verificar_whatsapp_lote(ids=ids, maximo=20, prioridad=None, forzar=forzar)
-                st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
-                st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
-                st.rerun()
+    f1, f2, f3, f4 = st.columns(4)
+    prioridad_sel = f1.selectbox("Prioridad", ["Todas", "Alta", "Media", "Baja"])
+    estado_sel = f2.selectbox("Estado", ["Todos", "Pendiente", "Contactado", "Respondió", "Interesado", "Demo enviada", "Negociación"])
+    whatsapp_sel = f3.selectbox("WhatsApp", ["Pendiente", "Sí", "No", "Error", "Todos"])
+    cantidad = f4.number_input("Cantidad a verificar", min_value=1, max_value=50, value=10, step=1)
 
-    st.subheader("Tabla de resultados")
-    df = load_prospectos()
-    columnas = ["ID", "Nombre", "Telefono", "Prioridad", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
-    st.dataframe(df[[c for c in columnas if c in df.columns]], use_container_width=True, hide_index=True)
+    preview = df.copy()
+    if prioridad_sel != "Todas":
+        preview = preview[preview["Prioridad"].fillna("").astype(str).str.lower() == prioridad_sel.lower()]
+    if estado_sel != "Todos":
+        preview = preview[preview["Estado"].fillna("").astype(str).str.lower() == estado_sel.lower()]
+    if whatsapp_sel != "Todos":
+        preview = preview[preview["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).str.lower() == whatsapp_sel.lower()]
+    preview = preview[preview["Telefono"].fillna("").astype(str).str.strip().ne("")]
+
+    if whatsapp_sel == "Todos":
+        confirmar_todos = st.checkbox("Confirmo que quiero permitir revisar también prospectos ya marcados como Sí o No", value=False)
+    else:
+        confirmar_todos = False
+
+    candidatos = preview.copy()
+    if not (whatsapp_sel == "Todos" and confirmar_todos):
+        candidatos = candidatos[~candidatos["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).isin(["Sí", "No"])]
+    candidatos = candidatos.head(int(cantidad))
+    st.info(f"Se verificarán {len(candidatos)} prospectos")
+    if len(candidatos) == 0:
+        st.warning("No hay prospectos que coincidan con los filtros")
+
+    columnas_wa = ["ID", "Nombre", "Telefono", "Prioridad", "Estado", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
+    st.subheader("Prospectos que coinciden con los filtros")
+    st.dataframe(preview[[c for c in columnas_wa if c in preview.columns]], use_container_width=True, hide_index=True)
+
+    col_run, col_test, col_reset = st.columns(3)
+    with col_run:
+        if st.button("Verificar cantidad seleccionada", type="primary", disabled=len(candidatos) == 0):
+            with st.spinner("Verificando prospectos seleccionados por filtros..."):
+                try:
+                    resultados = verificar_whatsapp_lote(
+                        maximo=int(cantidad),
+                        prioridad=None if prioridad_sel == "Todas" else prioridad_sel,
+                        estado=None if estado_sel == "Todos" else estado_sel,
+                        whatsapp_estado=None if whatsapp_sel == "Todos" else whatsapp_sel,
+                        forzar=whatsapp_sel == "Todos" and confirmar_todos,
+                    )
+                    st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
+                    st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"No se pudo ejecutar Playwright/WhatsApp: {exc}")
+    with col_test:
+        if st.button("Verificar solo 1 de prueba", disabled=len(candidatos) == 0):
+            with st.spinner("Verificando 1 prospecto de prueba..."):
+                try:
+                    resultados = verificar_whatsapp_lote(
+                        maximo=1,
+                        prioridad=None if prioridad_sel == "Todas" else prioridad_sel,
+                        estado=None if estado_sel == "Todos" else estado_sel,
+                        whatsapp_estado=None if whatsapp_sel == "Todos" else whatsapp_sel,
+                        forzar=whatsapp_sel == "Todos" and confirmar_todos,
+                    )
+                    st.success(f"Prueba terminada. Registros procesados: {len(resultados)}")
+                    st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"No se pudo ejecutar Playwright/WhatsApp: {exc}")
+    with col_reset:
+        if st.button("Reiniciar sesión WhatsApp"):
+            try:
+                destino = reiniciar_sesion_whatsapp()
+                if destino:
+                    st.success(f"Sesión reiniciada. Perfil anterior renombrado a {destino}")
+                else:
+                    st.info("No había perfil de WhatsApp para reiniciar.")
+            except Exception as exc:
+                st.error(f"No se pudo reiniciar la sesión de WhatsApp: {exc}")
+
+    st.subheader("Verificar IDs manualmente")
+    ids_txt = st.text_input("IDs separados por coma", placeholder="Ejemplo: 12,45,88")
+    forzar_ids = st.checkbox("Confirmo verificar IDs aunque ya tengan WhatsApp Sí/No", value=False)
+    ids = normalize_list(ids_txt)
+    ids_preview = df[df["ID"].astype(str).isin(set(ids))] if ids else df.iloc[0:0]
+    ids_preview = ids_preview[ids_preview["Telefono"].fillna("").astype(str).str.strip().ne("")]
+    if ids and not forzar_ids:
+        ids_preview = ids_preview[~ids_preview["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).isin(["Sí", "No"])]
+    st.info(f"Se verificarán {len(ids_preview)} prospectos")
+    if ids and len(ids_preview) == 0:
+        st.warning("No hay prospectos que coincidan con los filtros")
+    if st.button("Verificar IDs"):
+        if not ids:
+            st.warning("Ingresa al menos un ID.")
+        elif len(ids_preview) == 0:
+            st.warning("No hay prospectos que coincidan con los filtros")
+        else:
+            with st.spinner("Verificando IDs seleccionados..."):
+                try:
+                    resultados = verificar_whatsapp_lote(ids=ids, maximo=min(len(ids), 50), prioridad=None, forzar=forzar_ids)
+                    st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
+                    st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"No se pudo ejecutar Playwright/WhatsApp: {exc}")
 
 elif section == "Crear proyecto":
     st.header("Crear proyecto del cliente")
