@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -43,9 +44,11 @@ ESTADOS_EQUIVALENTES = {"Pendiente": "Nuevo", "Demo creada": "Demo enviada", "De
 
 
 def normalizar_telefono_whatsapp(telefono):
-    """Devuelve un teléfono limpio para enlaces wa.me.
+    """Devuelve un teléfono mexicano en formato internacional para WhatsApp.
 
-    Por defecto asume México: 10 dígitos locales => 52XXXXXXXXXX.
+    Convierte teléfonos locales de 10 dígitos a 52XXXXXXXXXX, conserva números
+    mexicanos con prefijo 52 y elimina el prefijo móvil legacy 521 si existe.
+    Devuelve cadena vacía cuando el número no tiene un formato reconocido.
     """
     digitos = normalizar_telefono(telefono)
     if not digitos:
@@ -54,18 +57,25 @@ def normalizar_telefono_whatsapp(telefono):
         digitos = digitos[2:]
     if len(digitos) == 10:
         return f"52{digitos}"
-    if len(digitos) == 11 and digitos.startswith("1"):
-        return f"52{digitos[-10:]}"
     if len(digitos) == 12 and digitos.startswith("52"):
         return digitos
     if len(digitos) == 13 and digitos.startswith("521"):
         return f"52{digitos[-10:]}"
-    return digitos
+    return ""
+
+
+def crear_link_whatsapp_desktop(telefono):
+    numero = normalizar_telefono_whatsapp(telefono)
+    return f"whatsapp://send?phone={numero}" if numero else ""
+
+
+def crear_link_whatsapp_web(telefono):
+    numero = normalizar_telefono_whatsapp(telefono)
+    return f"https://wa.me/{numero}" if numero else ""
 
 
 def url_whatsapp(telefono):
-    numero = normalizar_telefono_whatsapp(telefono)
-    return f"https://wa.me/{numero}" if numero else ""
+    return crear_link_whatsapp_web(telefono)
 
 
 def marcar_whatsapp_manual(df, idx, estado, error=""):
@@ -484,7 +494,7 @@ elif section == "Ver prospectos":
 elif section == "Verificar WhatsApp":
     st.header("Verificación manual asistida")
     st.warning("No se envían mensajes automáticamente. Esta herramienta solo abre chats para revisión manual.")
-    st.caption("Flujo seguro: no escribe mensajes, no envía mensajes y no automatiza WhatsApp Web. Usa enlaces wa.me para abrir WhatsApp Desktop/Windows o la aplicación configurada en tu equipo.")
+    st.caption("Flujo seguro: no escribe mensajes, no envía mensajes y no automatiza WhatsApp Web. Intenta abrir primero WhatsApp Desktop/Windows y también ofrece un enlace web de respaldo.")
 
     df = load_prospectos()
     for columna in ["WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]:
@@ -518,7 +528,7 @@ elif section == "Verificar WhatsApp":
 
     cantidad_abrir = st.number_input("Abrir siguientes N prospectos", min_value=1, max_value=10, value=3, step=1)
     siguientes = candidatos.head(int(cantidad_abrir))
-    urls_siguientes = [url_whatsapp(row.get("Telefono", "")) for _, row in siguientes.iterrows()]
+    urls_siguientes = [crear_link_whatsapp_desktop(row.get("Telefono", "")) for _, row in siguientes.iterrows()]
     boton_abrir_varios_whatsapp(urls_siguientes)
 
     columnas_wa = ["ID", "Nombre", "Telefono", "Prioridad", "Estado", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
@@ -534,28 +544,40 @@ elif section == "Verificar WhatsApp":
         telefono = row_value(row, "Telefono")
         prioridad = row_value(row, "Prioridad")
         estado_actual = row_value(row, "Estado")
-        wa_url = url_whatsapp(telefono)
+        telefono_normalizado = normalizar_telefono_whatsapp(telefono)
+        wa_desktop_url = crear_link_whatsapp_desktop(telefono)
+        wa_web_url = crear_link_whatsapp_web(telefono)
         with st.container(border=True):
             st.markdown(f"**{nombre}**")
             st.write(f"📞 {telefono or 'Sin teléfono'}")
+            if telefono_normalizado:
+                st.write(f"Teléfono normalizado: `{telefono_normalizado}`")
+            else:
+                st.error("No se pudo generar enlace de WhatsApp para este número.")
             st.write(f"Prioridad: **{prioridad or '—'}** · Estado: **{estado_actual or '—'}**")
-            b1, b2, b3, b4 = st.columns(4)
+            b1, b2, b3, b4, b5 = st.columns(5)
             with b1:
-                if wa_url:
-                    st.link_button("Abrir WhatsApp", wa_url)
+                if wa_desktop_url:
+                    if st.button("Abrir WhatsApp", key=f"wa_open_{idx}"):
+                        webbrowser.open(wa_desktop_url)
                 else:
                     st.button("Abrir WhatsApp", key=f"wa_open_disabled_{idx}", disabled=True)
             with b2:
+                if wa_web_url:
+                    st.link_button("Abrir en navegador", wa_web_url)
+                else:
+                    st.button("Abrir en navegador", key=f"wa_web_disabled_{idx}", disabled=True)
+            with b3:
                 if st.button("Sí tiene WhatsApp", key=f"wa_si_{idx}"):
                     marcar_whatsapp_manual(df, idx, "Sí")
                     st.success("WhatsApp marcado como Sí y Excel guardado.")
                     st.rerun()
-            with b3:
+            with b4:
                 if st.button("No tiene WhatsApp", key=f"wa_no_{idx}"):
                     marcar_whatsapp_manual(df, idx, "No")
                     st.success("WhatsApp marcado como No y Excel guardado.")
                     st.rerun()
-            with b4:
+            with b5:
                 if st.button("Error / revisar después", key=f"wa_error_{idx}"):
                     marcar_whatsapp_manual(df, idx, "Error", "Revisar después")
                     st.success("WhatsApp marcado como Error y Excel guardado.")
