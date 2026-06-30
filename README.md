@@ -203,7 +203,7 @@ El dashboard incluye filtros por estado, prioridad, nicho, si tiene web, demo cr
 
 ## Verificación manual asistida de WhatsApp
 
-El CRM ya no automatiza WhatsApp Web con Playwright para validar números, porque ese flujo puede pedir inicio de sesión, depender del QR y generar errores. El nuevo enfoque usa enlaces `wa.me` para abrir chats en WhatsApp Desktop/Windows o en la aplicación asociada del equipo, y la decisión se registra manualmente.
+El CRM ya no automatiza WhatsApp Web con Playwright para validar números, porque ese flujo puede pedir inicio de sesión, depender del QR y generar errores. El nuevo enfoque intenta abrir primero WhatsApp Desktop en Windows con enlaces `whatsapp://send?phone=52XXXXXXXXXX` y deja un botón secundario `https://wa.me/52XXXXXXXXXX` como respaldo en navegador. La decisión se registra manualmente.
 
 > **No se envían mensajes automáticamente. Esta herramienta solo abre chats para revisión manual.**
 
@@ -230,14 +230,18 @@ Abre la sección **Verificar WhatsApp**, que ahora muestra el encabezado **Verif
 3. Mostrar solo prospectos con `WhatsApp = Pendiente`.
 4. Mostrar solo prospectos que tienen teléfono.
 5. Ver nombre, teléfono y prioridad de cada prospecto.
-6. Abrir un chat con el botón **Abrir WhatsApp**, que usa enlaces con formato `https://wa.me/52XXXXXXXXXX` cuando el teléfono local tiene 10 dígitos de México.
-7. Registrar el resultado con **Sí tiene WhatsApp**, **No tiene WhatsApp** o **Error / revisar después**.
+6. Ver el valor **Teléfono normalizado**, por ejemplo `523319750747` para `33 1975 0747`, `+52 33 1975 0747` o `(33) 1975-0747`.
+7. Abrir un chat con el botón **Abrir WhatsApp**, que intenta usar WhatsApp Desktop/Windows con `whatsapp://send?phone=52XXXXXXXXXX`.
+8. Usar **Abrir en navegador** como respaldo, con `https://wa.me/52XXXXXXXXXX`.
+9. Registrar el resultado con **Sí tiene WhatsApp**, **No tiene WhatsApp** o **Error / revisar después**.
+
+Si el teléfono no se puede normalizar, la app muestra: `No se pudo generar enlace de WhatsApp para este número.`
 
 Al pulsar **Sí tiene WhatsApp** o **No tiene WhatsApp**, la app actualiza `WhatsApp`, llena `Fecha_Verificacion_WhatsApp` con la fecha y hora actual, limpia/actualiza `Error_WhatsApp` y guarda inmediatamente el Excel.
 
 ### Abrir siguientes N prospectos
 
-La sección incluye el control **Abrir siguientes N prospectos** con un valor configurable entre **1 y 10**. El botón de lote abre enlaces `wa.me` para los siguientes prospectos filtrados y nunca intenta abrir más de 10 chats a la vez.
+La sección incluye el control **Abrir siguientes N prospectos** con un valor configurable entre **1 y 10**. El botón de lote abre enlaces `whatsapp://send?phone=52XXXXXXXXXX` para los siguientes prospectos filtrados y nunca intenta abrir más de 10 chats a la vez.
 
 ### Reglas de seguridad aplicadas
 
@@ -245,7 +249,8 @@ La sección incluye el control **Abrir siguientes N prospectos** con un valor co
 - No envía mensajes.
 - No automatiza WhatsApp Web.
 - No usa Playwright para WhatsApp.
-- Solo abre chats mediante enlaces `wa.me` para que una persona revise manualmente.
+- No usa rutas antiguas de resolución, enlaces intermedios ni esquemas móviles de Android/iOS; solo `whatsapp://send?phone=...` y `https://wa.me/...`.
+- Solo abre chats mediante `whatsapp://send?phone=...` o `wa.me` para que una persona revise manualmente.
 - Guarda el Excel después de cada decisión manual.
 
 ### Verificación automática desactivada

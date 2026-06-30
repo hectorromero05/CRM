@@ -12,10 +12,7 @@ PERFIL_WHATSAPP = Path(".whatsapp_profile")
 
 
 def normalizar_telefono_whatsapp(telefono):
-    """Devuelve teléfono en formato internacional para enlaces wa.me.
-
-    Por defecto asume México: 10 dígitos locales => 52XXXXXXXXXX.
-    """
+    """Devuelve teléfono mexicano en formato internacional para WhatsApp."""
     digitos = normalizar_telefono(telefono)
     if not digitos:
         return ""
@@ -23,18 +20,25 @@ def normalizar_telefono_whatsapp(telefono):
         digitos = digitos[2:]
     if len(digitos) == 10:
         return f"52{digitos}"
-    if len(digitos) == 11 and digitos.startswith("1"):
-        return f"52{digitos[-10:]}"
     if len(digitos) == 12 and digitos.startswith("52"):
         return digitos
     if len(digitos) == 13 and digitos.startswith("521"):
         return f"52{digitos[-10:]}"
-    return digitos
+    return ""
+
+
+def crear_link_whatsapp_desktop(telefono):
+    numero = normalizar_telefono_whatsapp(telefono)
+    return f"whatsapp://send?phone={numero}" if numero else ""
+
+
+def crear_link_whatsapp_web(telefono):
+    numero = normalizar_telefono_whatsapp(telefono)
+    return f"https://wa.me/{numero}" if numero else ""
 
 
 def url_whatsapp(telefono):
-    numero = normalizar_telefono_whatsapp(telefono)
-    return f"https://wa.me/{numero}" if numero else ""
+    return crear_link_whatsapp_web(telefono)
 
 
 def _asegurar_columnas_whatsapp(df):
