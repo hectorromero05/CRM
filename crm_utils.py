@@ -16,7 +16,10 @@ COLUMNAS = [
     "Estado", "Demo", "Repositorio_GitHub", "Vercel_URL", "Vercel_Project_Name",
     "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
     "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
-    "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Notas", "Fecha_busqueda",
+    "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion",
+    "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto", "Canal",
+    "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
+    "Notas", "Fecha_busqueda",
 ]
 
 ESTADOS = [
@@ -79,7 +82,8 @@ def asegurar_excel(ruta=ARCHIVO_EXCEL):
         "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
         "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
-        "Motivo_Prioridad",
+        "Motivo_Prioridad", "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto",
+        "Canal", "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
     ]
     df = pd.read_excel(ruta, dtype={col: object for col in texto_columnas})
     for columna in COLUMNAS:
@@ -102,7 +106,8 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
         "Codex_Task", "Restaurant_JSON", "Ruta_Local", "URL_GitHub", "URL_Vercel",
         "Proyecto_Creado", "Repo_Creado", "Codex_Completado", "Deploy_Completado",
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
-        "Motivo_Prioridad",
+        "Motivo_Prioridad", "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto",
+        "Canal", "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
     ]:
         if columna in df.columns:
             df[columna] = df[columna].fillna("").astype("object")

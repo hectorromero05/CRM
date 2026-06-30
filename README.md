@@ -144,3 +144,59 @@ Columnas principales:
 - No usa Claude.
 - No usa Tailwind.
 - Mantiene React + Vite.
+
+## Dashboard visual de ventas
+
+La pantalla **Dashboard** de Streamlit es ahora la vista principal para administrar cientos de prospectos sin depender solamente de una tabla.
+
+### Cómo usar el dashboard
+
+1. Ejecuta:
+
+```bash
+streamlit run app.py
+```
+
+2. Abre la sección **Dashboard** en la barra lateral.
+3. Revisa las métricas superiores: total de prospectos, nuevos, contactados, respondieron, interesados, demo enviada, negociación, clientes, perdidos, demos creadas, repositorios y deploys.
+4. Usa el **Pipeline visual** para ver el embudo comercial por estado. Cada columna muestra el conteo y tarjetas resumidas de prospectos.
+5. Usa la tabla inferior como vista secundaria para revisar o auditar la base filtrada.
+
+### Cómo cambiar estados
+
+En cada tarjeta puedes cambiar el estado con acciones rápidas:
+
+- Contactado
+- Respondió
+- Interesado
+- Demo enviada
+- Negociación
+- Cliente
+- Perdido
+
+También puedes abrir **Más acciones**, elegir cualquier estado del pipeline y presionar **Guardar estado**. Los cambios se guardan inmediatamente en `prospectos_restaurantes.xlsx`.
+
+### Cómo programar seguimientos
+
+Desde cada tarjeta puedes usar:
+
+- **+3 días** para programar el próximo seguimiento a tres días.
+- **+7 días** para programarlo a una semana.
+
+En la **Vista detalle** también puedes editar manualmente `Fecha último contacto`, `Fecha próximo seguimiento`, `Persona de contacto`, `Canal`, `Probabilidad de cierre`, `Valor estimado` y notas. Todo se persiste inmediatamente en `prospectos_restaurantes.xlsx`.
+
+### Cómo usar “Hoy qué hago”
+
+La sección **Hoy qué hago** aparece arriba del dashboard y ordena acciones prioritarias del día:
+
+1. Seguimientos vencidos o con fecha de hoy.
+2. Interesados sin próximo seguimiento.
+3. Demos creadas sin enviar.
+4. Prospectos que respondieron pero no tienen siguiente paso.
+5. Negociaciones abiertas.
+
+Abre cada acción para ver la tarjeta del prospecto, contactar por WhatsApp, abrir Google Maps, actualizar estado, agregar notas o programar el siguiente seguimiento.
+
+### Filtros disponibles
+
+El dashboard incluye filtros por estado, prioridad, nicho, si tiene web, demo creada, repositorio, deploy, seguimiento vencido, rango de rating y rango de reseñas.

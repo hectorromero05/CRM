@@ -1,14 +1,14 @@
 import contextlib
 import io
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas
-from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel
+from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel, guardar_excel
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
 from visual_analyzer import analizar_perfil_visual
 
@@ -25,8 +25,117 @@ DEFAULT_CONFIG = {
 COLUMNAS_VISIBLES = [
     "Prioridad", "Puntaje_Prioridad", "Motivo_Prioridad", "Tiene_web", "Sitio_web", "Resenas",
     "ID", "Nombre", "Nicho", "Telefono", "Rating", "Direccion", "Horario", "Categoria", "Estado",
-    "Demo", "Repositorio_GitHub", "Vercel_URL", "Google_Maps", "Notas", "Fecha_busqueda",
+    "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto", "Canal", "Probabilidad_Cierre",
+    "Valor_Estimado", "Historial_Comercial", "Demo", "Repositorio_GitHub", "Vercel_URL",
+    "Google_Maps", "Notas", "Fecha_busqueda",
 ]
+
+ESTADOS_PIPELINE = [
+    "Nuevo", "Contactado", "Respondió", "Interesado", "Demo enviada",
+    "Negociación", "Cliente", "Perdido", "Pospuesto",
+]
+
+ESTADOS_EQUIVALENTES = {"Pendiente": "Nuevo", "Demo creada": "Demo enviada", "Demo publicada": "Demo enviada", "Cerrado": "Cliente", "Cotización enviada": "Negociación"}
+
+
+
+def estado_crm(valor):
+    estado = str(valor or "").strip()
+    return ESTADOS_EQUIVALENTES.get(estado, estado or "Nuevo")
+
+
+def has_value(value):
+    return bool(str(value or "").strip())
+
+
+def row_value(row, column, default=""):
+    value = row.get(column, default) if hasattr(row, "get") else default
+    return "" if pd.isna(value) else value
+
+
+def parse_date(value):
+    if pd.isna(value) or not str(value).strip():
+        return None
+    parsed = pd.to_datetime(value, errors="coerce")
+    return None if pd.isna(parsed) else parsed.date()
+
+
+def save_cell(df, idx, column, value, note=None):
+    df.at[idx, column] = value
+    if note:
+        previous = str(df.at[idx, "Historial_Comercial"] or "") if "Historial_Comercial" in df.columns else ""
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        df.at[idx, "Historial_Comercial"] = f"{previous}\n[{stamp}] {note}".strip()
+    guardar_excel(df, ARCHIVO_EXCEL)
+
+
+def action_button(label, key, callback, *args, **kwargs):
+    if st.button(label, key=key, **kwargs):
+        callback(*args)
+        st.success("Cambio guardado inmediatamente.")
+        st.rerun()
+
+
+def prospect_card(row, idx, df, prefix):
+    nombre = row_value(row, "Nombre", "Sin nombre")
+    st.markdown(f"**{nombre}**")
+    st.caption(f"{row_value(row, 'Prioridad')} · ⭐ {row_value(row, 'Rating')} · {row_value(row, 'Resenas')} reseñas")
+    st.write(f"📞 {row_value(row, 'Telefono') or 'Sin teléfono'}")
+    st.write(f"🌐 Web: {row_value(row, 'Tiene_web') or 'no'} | Estado: {estado_crm(row_value(row, 'Estado'))}")
+    st.write(f"Último: {row_value(row, 'Ultimo_Contacto') or '—'}")
+    st.write(f"Próximo: {row_value(row, 'Proximo_Seguimiento') or '—'}")
+    b1, b2 = st.columns(2)
+    with b1:
+        maps = row_value(row, "Google_Maps")
+        if maps: st.link_button("Maps", maps, use_container_width=True)
+        action_button("+3 días", f"{prefix}_3", save_cell, df, idx, "Proximo_Seguimiento", (date.today()+timedelta(days=3)).isoformat(), "Seguimiento programado en 3 días")
+        action_button("Contactado", f"{prefix}_contactado", save_cell, df, idx, "Estado", "Contactado", "Marcado como Contactado")
+    with b2:
+        repo = row_value(row, "Repositorio_GitHub") or row_value(row, "URL_GitHub")
+        vercel = row_value(row, "Vercel_URL") or row_value(row, "URL_Vercel")
+        if repo: st.link_button("GitHub", repo, use_container_width=True)
+        elif vercel: st.link_button("Vercel", vercel, use_container_width=True)
+        action_button("+7 días", f"{prefix}_7", save_cell, df, idx, "Proximo_Seguimiento", (date.today()+timedelta(days=7)).isoformat(), "Seguimiento programado en 7 días")
+        action_button("Interesado", f"{prefix}_interesado", save_cell, df, idx, "Estado", "Interesado", "Marcado como Interesado")
+    with st.expander("Más acciones"):
+        st.caption("Acciones de proyecto")
+        p1, p2 = st.columns(2)
+        with p1:
+            if st.button("Crear proyecto", key=f"{prefix}_crear"):
+                with st.spinner("Creando proyecto..."):
+                    crear_proyecto_cliente(row_value(row, "ID"))
+                st.rerun()
+        with p2:
+            if st.button("Finalizar proyecto", key=f"{prefix}_finalizar"):
+                with st.spinner("Finalizando proyecto..."):
+                    finalizar_proyecto(row_value(row, "ID"))
+                st.rerun()
+        st.caption("Cambios rápidos de estado")
+        quick_cols = st.columns(3)
+        for pos, quick_estado in enumerate(["Respondió", "Demo enviada", "Negociación", "Cliente", "Perdido"]):
+            with quick_cols[pos % 3]:
+                action_button(quick_estado, f"{prefix}_quick_{quick_estado}", save_cell, df, idx, "Estado", quick_estado, f"Marcado como {quick_estado}")
+        estado = st.selectbox("Cambiar estado", ESTADOS_PIPELINE, index=ESTADOS_PIPELINE.index(estado_crm(row_value(row, "Estado"))) if estado_crm(row_value(row, "Estado")) in ESTADOS_PIPELINE else 0, key=f"{prefix}_estado")
+        action_button("Guardar estado", f"{prefix}_guardar_estado", save_cell, df, idx, "Estado", estado, f"Estado cambiado a {estado}")
+        nota = st.text_input("Nota rápida", key=f"{prefix}_nota")
+        if st.button("Agregar nota", key=f"{prefix}_agregar_nota") and nota.strip():
+            previous = str(row_value(row, "Notas"))
+            save_cell(df, idx, "Notas", f"{previous}\n{datetime.now():%Y-%m-%d}: {nota}".strip(), f"Nota rápida: {nota}")
+            st.rerun()
+        wa = str(row_value(row, "Telefono"))
+        if wa: st.code(f"https://wa.me/{''.join(ch for ch in wa if ch.isdigit())}", language=None)
+
+
+def render_metrics(df):
+    metricas = [("Total prospectos", len(df)), ("Nuevos", sum(estado_crm(x)=="Nuevo" for x in df.get("Estado", []))),
+        ("Contactados", sum(estado_crm(x)=="Contactado" for x in df.get("Estado", []))), ("Respondieron", sum(estado_crm(x)=="Respondió" for x in df.get("Estado", []))),
+        ("Interesados", sum(estado_crm(x)=="Interesado" for x in df.get("Estado", []))), ("Demo enviada", sum(estado_crm(x)=="Demo enviada" for x in df.get("Estado", []))),
+        ("Negociación", sum(estado_crm(x)=="Negociación" for x in df.get("Estado", []))), ("Clientes", sum(estado_crm(x)=="Cliente" for x in df.get("Estado", []))),
+        ("Perdidos", sum(estado_crm(x)=="Perdido" for x in df.get("Estado", []))), ("Demos creadas", metric_count(df, "Proyecto_Creado", "sí") + df.get("Demo", pd.Series(dtype=str)).fillna("").astype(str).ne("").sum()),
+        ("Repositorios", metric_count(df, "Repo_Creado", "sí") + df.get("Repositorio_GitHub", pd.Series(dtype=str)).fillna("").astype(str).ne("").sum()), ("Deploys", metric_count(df, "Deploy_Completado", "sí") + df.get("Vercel_URL", pd.Series(dtype=str)).fillna("").astype(str).ne("").sum())]
+    for row in [metricas[:6], metricas[6:]]:
+        for col, (label, value) in zip(st.columns(6), row):
+            col.metric(label, int(value))
 
 
 def ordenar_columnas_clave(df):
@@ -102,21 +211,112 @@ section = st.sidebar.radio(
 )
 
 if section == "Dashboard":
-    st.header("Dashboard")
+    st.header("Dashboard de ventas")
     df = load_prospectos()
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Total prospectos", len(df))
-    c2.metric("Alta prioridad", metric_count(df, "Prioridad", "Alta"))
-    c3.metric("Interesados", metric_count(df, "Estado", "Interesado"))
-    c4.metric("Demos creadas", metric_count(df, "Proyecto_Creado", "sí"))
-    c5.metric("Repositorios", metric_count(df, "Repo_Creado", "sí"))
-    c6.metric("Deploys", metric_count(df, "Deploy_Completado", "sí"))
-    search = st.text_input("Buscador", "")
-    base = df.copy()
+    render_metrics(df)
+
+    st.subheader("Hoy qué hago")
+    today = date.today()
+    acciones = []
+    for idx, row in df.iterrows():
+        estado = estado_crm(row_value(row, "Estado"))
+        proximo = parse_date(row_value(row, "Proximo_Seguimiento"))
+        nombre = row_value(row, "Nombre", "Sin nombre")
+        if proximo and proximo <= today:
+            acciones.append((1, idx, nombre, f"Seguimiento vencido o para hoy ({proximo.isoformat()})"))
+        if estado == "Interesado" and not proximo:
+            acciones.append((2, idx, nombre, "Interesado sin próximo seguimiento"))
+        if has_value(row_value(row, "Demo")) and estado != "Demo enviada":
+            acciones.append((3, idx, nombre, "Demo creada sin enviar"))
+        if estado == "Respondió" and not proximo:
+            acciones.append((4, idx, nombre, "Respondió y falta definir siguiente paso"))
+        if estado == "Negociación":
+            acciones.append((5, idx, nombre, "Negociación abierta"))
+    acciones = sorted(acciones, key=lambda item: item[0])
+    if acciones:
+        for prioridad_accion, idx, nombre, motivo in acciones[:25]:
+            with st.expander(f"{prioridad_accion}. {nombre} — {motivo}"):
+                prospect_card(df.loc[idx], idx, df, f"today_{idx}_{prioridad_accion}")
+    else:
+        st.success("No hay seguimientos vencidos ni acciones críticas para hoy.")
+
+    st.subheader("Pipeline visual")
+    pipe_cols = st.columns(len(ESTADOS_PIPELINE))
+    for col, estado in zip(pipe_cols, ESTADOS_PIPELINE):
+        subset = df[df.get("Estado", pd.Series(dtype=str)).apply(estado_crm) == estado] if not df.empty else df
+        with col:
+            st.metric(estado, len(subset))
+            for idx, row in subset.head(4).iterrows():
+                with st.container(border=True):
+                    prospect_card(row, idx, df, f"pipe_{estado}_{idx}")
+            if len(subset) > 4:
+                st.caption(f"+ {len(subset) - 4} más")
+
+    st.subheader("Buscador y filtros")
+    filtered = df.copy()
+    search = st.text_input("Buscar prospectos", "")
     if search:
-        mask = base.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)
-        base = base[mask]
-    st.dataframe(ordenar_columnas_clave(base), use_container_width=True, hide_index=True)
+        filtered = filtered[filtered.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)]
+    f1, f2, f3, f4 = st.columns(4)
+    estado = f1.selectbox("Estado", ["Todos"] + ESTADOS_PIPELINE)
+    prioridad = f2.selectbox("Prioridad", ["Todas", "Alta", "Media", "Baja"])
+    nichos = ["Todos"] + sorted([x for x in df.get("Nicho", pd.Series(dtype=str)).dropna().astype(str).unique() if x])
+    nicho = f3.selectbox("Nicho", nichos)
+    tiene_web = f4.selectbox("Tiene web", ["Todos", "sí", "no"])
+    f5, f6, f7, f8 = st.columns(4)
+    demo = f5.selectbox("Demo creada", ["Todos", "Sí", "No"])
+    repo = f6.selectbox("Repo creado", ["Todos", "Sí", "No"])
+    deploy = f7.selectbox("Deploy", ["Todos", "Sí", "No"])
+    vencido = f8.checkbox("Seguimiento vencido")
+    r1, r2 = st.columns(2)
+    rating_range = r1.slider("Rango de rating", 0.0, 5.0, (0.0, 5.0), 0.1)
+    resenas_range = r2.slider("Rango de reseñas", 0, int(max(1000, pd.to_numeric(df.get("Resenas", pd.Series([0])), errors="coerce").fillna(0).max() if not df.empty else 1000)), (0, int(max(1000, pd.to_numeric(df.get("Resenas", pd.Series([0])), errors="coerce").fillna(0).max() if not df.empty else 1000))))
+    if estado != "Todos": filtered = filtered[filtered["Estado"].apply(estado_crm) == estado]
+    if prioridad != "Todas": filtered = filtered[filtered["Prioridad"].fillna("").astype(str) == prioridad]
+    if nicho != "Todos": filtered = filtered[filtered["Nicho"].fillna("").astype(str) == nicho]
+    filtered = yes_no_filter(filtered, "Tiene_web", tiene_web)
+    for label, column, choice in [("demo", "Demo", demo), ("repo", "Repositorio_GitHub", repo), ("deploy", "Vercel_URL", deploy)]:
+        if choice != "Todos":
+            mask = filtered[column].fillna("").astype(str).ne("") if column in filtered else pd.Series(False, index=filtered.index)
+            filtered = filtered[mask if choice == "Sí" else ~mask]
+    if vencido:
+        filtered = filtered[filtered["Proximo_Seguimiento"].apply(lambda value: (parse_date(value) or date.max) <= today)]
+    ratings = pd.to_numeric(filtered.get("Rating", pd.Series(dtype=float)), errors="coerce").fillna(0)
+    resenas = pd.to_numeric(filtered.get("Resenas", pd.Series(dtype=int)), errors="coerce").fillna(0)
+    filtered = filtered[ratings.between(*rating_range) & resenas.between(*resenas_range)]
+
+    st.subheader("Vista detalle")
+    if filtered.empty:
+        st.info("No hay prospectos con los filtros actuales.")
+    else:
+        options = [f"{row.ID} - {row.Nombre}" for row in filtered[["ID", "Nombre"]].itertuples(index=False)]
+        selected = st.selectbox("Seleccionar prospecto", options)
+        selected_id = selected.split(" - ", 1)[0]
+        idx = df[df["ID"].astype(str) == str(selected_id)].index[0]
+        row = df.loc[idx]
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.write({k: row_value(row, k) for k in ["Nombre", "Telefono", "Direccion", "Google_Maps", "Rating", "Resenas", "Sitio_web", "Prioridad", "Motivo_Prioridad", "Estado", "Demo", "Repositorio_GitHub", "Vercel_URL"]})
+        with c2:
+            with st.form(f"detalle_{idx}"):
+                new_estado = st.selectbox("Estado", ESTADOS_PIPELINE, index=ESTADOS_PIPELINE.index(estado_crm(row_value(row, "Estado"))) if estado_crm(row_value(row, "Estado")) in ESTADOS_PIPELINE else 0)
+                notas = st.text_area("Notas", str(row_value(row, "Notas")))
+                ultimo = st.date_input("Fecha último contacto", value=parse_date(row_value(row, "Ultimo_Contacto")) or today)
+                proximo = st.date_input("Fecha próximo seguimiento", value=parse_date(row_value(row, "Proximo_Seguimiento")) or today)
+                persona = st.text_input("Persona de contacto", str(row_value(row, "Persona_Contacto")))
+                canal = st.text_input("Canal", str(row_value(row, "Canal")))
+                prob = st.number_input("Probabilidad de cierre (%)", 0, 100, int(float(row_value(row, "Probabilidad_Cierre") or 0)))
+                valor = st.number_input("Valor estimado", min_value=0.0, value=float(row_value(row, "Valor_Estimado") or 0), step=100.0)
+                if st.form_submit_button("Guardar detalle", type="primary"):
+                    for col_name, val in {"Estado": new_estado, "Notas": notas, "Ultimo_Contacto": ultimo.isoformat(), "Proximo_Seguimiento": proximo.isoformat(), "Persona_Contacto": persona, "Canal": canal, "Probabilidad_Cierre": prob, "Valor_Estimado": valor}.items():
+                        df.at[idx, col_name] = val
+                    save_cell(df, idx, "Historial_Comercial", row_value(row, "Historial_Comercial"), "Detalle actualizado")
+                    st.rerun()
+            st.text_area("Historial comercial", str(row_value(row, "Historial_Comercial")), disabled=True)
+
+    st.subheader("Tabla secundaria")
+    st.caption(f"Mostrando {len(filtered)} de {len(df)} prospectos")
+    st.dataframe(ordenar_columnas_clave(filtered), use_container_width=True, hide_index=True)
 
 elif section == "Buscar prospectos":
     st.header("Buscar prospectos")
