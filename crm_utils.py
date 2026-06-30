@@ -19,6 +19,7 @@ COLUMNAS = [
     "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion",
     "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto", "Canal",
     "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
+    "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp",
     "Notas", "Fecha_busqueda",
 ]
 
@@ -84,6 +85,7 @@ def asegurar_excel(ruta=ARCHIVO_EXCEL):
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
         "Motivo_Prioridad", "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto",
         "Canal", "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
+        "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp",
     ]
     df = pd.read_excel(ruta, dtype={col: object for col in texto_columnas})
     for columna in COLUMNAS:
@@ -108,6 +110,7 @@ def guardar_excel(df, ruta=ARCHIVO_EXCEL):
         "Fecha_Proyecto", "Fecha_Deploy", "Tiempo_Generacion", "Estado", "Notas", "Telefono",
         "Motivo_Prioridad", "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto",
         "Canal", "Probabilidad_Cierre", "Valor_Estimado", "Historial_Comercial",
+        "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp",
     ]:
         if columna in df.columns:
             df[columna] = df[columna].fillna("").astype("object")

@@ -11,6 +11,7 @@ from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, gen
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel, guardar_excel
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
 from visual_analyzer import analizar_perfil_visual
+from whatsapp_checker import verificar_whatsapp_lote
 
 CONFIG_PATH = Path("config.json")
 EXPORT_DIR = Path("exports")
@@ -27,7 +28,7 @@ COLUMNAS_VISIBLES = [
     "ID", "Nombre", "Nicho", "Telefono", "Rating", "Direccion", "Horario", "Categoria", "Estado",
     "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto", "Canal", "Probabilidad_Cierre",
     "Valor_Estimado", "Historial_Comercial", "Demo", "Repositorio_GitHub", "Vercel_URL",
-    "Google_Maps", "Notas", "Fecha_busqueda",
+    "Google_Maps", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp", "Notas", "Fecha_busqueda",
 ]
 
 ESTADOS_PIPELINE = [
@@ -207,7 +208,7 @@ st.title("CRM Restaurantes")
 
 section = st.sidebar.radio(
     "Secciones",
-    ["Dashboard", "Buscar prospectos", "Agregar por Google Maps", "Ver prospectos", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
+    ["Dashboard", "Buscar prospectos", "Agregar por Google Maps", "Ver prospectos", "Verificar WhatsApp", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
 )
 
 if section == "Dashboard":
@@ -421,6 +422,48 @@ elif section == "Ver prospectos":
     filtered = apply_filters(df, prioridad, estado, tiene_web, nicho)
     st.caption(f"Mostrando {len(filtered)} de {len(df)} prospectos")
     st.dataframe(ordenar_columnas_clave(filtered), use_container_width=True, hide_index=True)
+
+elif section == "Verificar WhatsApp":
+    st.header("Verificar WhatsApp")
+    st.warning("Esta función solo verifica disponibilidad. No envía mensajes. Se recomienda revisar máximo 20-50 números por sesión.")
+    df = load_prospectos()
+    if "WhatsApp" not in df.columns:
+        df["WhatsApp"] = "Pendiente"
+    wa = df["WhatsApp"].fillna("").replace("", "Pendiente").astype(str)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total pendientes", int(wa.eq("Pendiente").sum()))
+    c2.metric("WhatsApp Sí", int(wa.eq("Sí").sum()))
+    c3.metric("WhatsApp No", int(wa.eq("No").sum()))
+    c4.metric("Errores", int(wa.eq("Error").sum()))
+
+    st.caption("Usa una sesión iniciada de WhatsApp Web. La verificación abre chats, pero no escribe ni envía mensajes.")
+    if st.button("Verificar próximos 20 Alta", type="primary"):
+        with st.spinner("Verificando hasta 20 prospectos de prioridad Alta..."):
+            resultados = verificar_whatsapp_lote(maximo=20, prioridad="Alta")
+        st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
+        st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+        st.rerun()
+
+    ids_txt = st.text_input("IDs específicos", placeholder="Ejemplo: 201,205,208")
+    col_ids, col_force = st.columns([1, 1])
+    with col_force:
+        forzar = st.checkbox("Volver a verificar aunque ya tengan Sí/No", value=False)
+    with col_ids:
+        if st.button("Verificar IDs específicos"):
+            ids = normalize_list(ids_txt)
+            if not ids:
+                st.warning("Ingresa al menos un ID.")
+            else:
+                with st.spinner("Verificando IDs seleccionados..."):
+                    resultados = verificar_whatsapp_lote(ids=ids, maximo=20, prioridad=None, forzar=forzar)
+                st.success(f"Verificación terminada. Registros procesados: {len(resultados)}")
+                st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+                st.rerun()
+
+    st.subheader("Tabla de resultados")
+    df = load_prospectos()
+    columnas = ["ID", "Nombre", "Telefono", "Prioridad", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
+    st.dataframe(df[[c for c in columnas if c in df.columns]], use_container_width=True, hide_index=True)
 
 elif section == "Crear proyecto":
     st.header("Crear proyecto del cliente")
