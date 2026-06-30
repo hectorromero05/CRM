@@ -200,3 +200,65 @@ Abre cada acción para ver la tarjeta del prospecto, contactar por WhatsApp, abr
 ### Filtros disponibles
 
 El dashboard incluye filtros por estado, prioridad, nicho, si tiene web, demo creada, repositorio, deploy, seguimiento vencido, rango de rating y rango de reseñas.
+
+## Verificación segura de WhatsApp
+
+El CRM incluye una sección **Verificar WhatsApp** para identificar si un prospecto con teléfono abre chat en WhatsApp Web. Esta función **solo verifica disponibilidad**: no escribe textos, no envía mensajes y no debe usarse para envíos masivos.
+
+### Uso recomendado
+
+1. Instala Playwright y Chromium si aún no lo hiciste:
+
+```bash
+pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+2. Abre WhatsApp Web una vez e inicia sesión escaneando el QR cuando el sistema lo solicite.
+3. Verifica pocos prospectos por sesión. Se recomienda revisar máximo **20-50 números por sesión**.
+4. No uses esta función para spam ni para envíos masivos.
+
+### Desde consola
+
+Ejecuta:
+
+```bash
+python main.py
+```
+
+Luego entra a **Verificar WhatsApp**. Las opciones disponibles son:
+
+1. Verificar un prospecto por ID.
+2. Verificar próximos 20 prospectos de prioridad Alta.
+3. Verificar prospectos seleccionados por IDs.
+4. Ver resultados de WhatsApp.
+
+No existe una opción para verificar todos los prospectos.
+
+### Desde Streamlit
+
+Ejecuta:
+
+```bash
+streamlit run app.py
+```
+
+Abre la sección **Verificar WhatsApp** para ver métricas de pendientes, WhatsApp Sí, WhatsApp No y errores. También puedes verificar los próximos 20 prospectos de prioridad Alta o ingresar IDs específicos.
+
+### Columnas de Excel
+
+La verificación agrega y actualiza estas columnas en `prospectos_restaurantes.xlsx`:
+
+- `WhatsApp`: `Pendiente`, `Sí`, `No` o `Error`.
+- `Fecha_Verificacion_WhatsApp`: fecha y hora de la última verificación.
+- `Error_WhatsApp`: detalle del error cuando no se puede determinar el resultado.
+
+### Reglas de seguridad aplicadas
+
+- Solo verifica prospectos con teléfono.
+- No vuelve a verificar prospectos ya marcados como `Sí` o `No`, salvo confirmación/selección explícita.
+- Procesa máximo 20 verificaciones por corrida por defecto.
+- Espera entre 4 y 9 segundos aleatorios entre verificaciones.
+- Cada 10 verificaciones realiza una pausa larga de 30 a 60 segundos.
+- Guarda el Excel después de cada verificación.
+- Si ocurre un error, lo guarda en `Error_WhatsApp` y continúa con el siguiente prospecto.
