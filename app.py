@@ -1,6 +1,8 @@
 import contextlib
 import io
 import json
+import re
+import shutil
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -40,24 +42,62 @@ ESTADOS_EQUIVALENTES = {"Pendiente": "Nuevo", "Demo creada": "Demo enviada", "De
 
 
 
-def normalizar_telefono_whatsapp(telefono):
-    """Devuelve un teléfono mexicano en formato internacional para WhatsApp.
-
-    Convierte teléfonos locales de 10 dígitos a 52XXXXXXXXXX, conserva números
-    mexicanos con prefijo 52 y elimina el prefijo móvil legacy 521 si existe.
-    Devuelve cadena vacía cuando el número no tiene un formato reconocido.
-    """
-    digitos = normalizar_telefono(telefono)
-    if not digitos:
+def extraer_telefono_valido(telefono):
+    """Extrae un teléfono mexicano válido de textos largos o celdas sucias."""
+    if pd.isna(telefono):
         return ""
+
+    texto = str(telefono)
+    patrones = [
+        r"(?<!\d)(?:\+?52|0052)\s*(?:\(?\d{2,3}\)?[\s.\-]*)?\d{3,4}[\s.\-]*\d{4}(?!\d)",
+        r"(?<!\d)(?:\(?\d{2,3}\)?[\s.\-]*)?\d{3,4}[\s.\-]*\d{4}(?!\d)",
+    ]
+
+    for patron in patrones:
+        for coincidencia in re.finditer(patron, texto):
+            digitos = normalizar_telefono(coincidencia.group(0))
+            if digitos.startswith("00"):
+                digitos = digitos[2:]
+            if len(digitos) == 13 and digitos.startswith("521"):
+                return f"52{digitos[-10:]}"
+            if len(digitos) == 12 and digitos.startswith("52"):
+                return digitos
+            if len(digitos) == 10:
+                return digitos
+
+    digitos = normalizar_telefono(telefono)
     if digitos.startswith("00"):
         digitos = digitos[2:]
+    if len(digitos) == 13 and digitos.startswith("521"):
+        return f"52{digitos[-10:]}"
+    if len(digitos) == 12 and digitos.startswith("52"):
+        return digitos
+    if len(digitos) == 10:
+        return digitos
+    return ""
+
+
+def telefono_para_mostrar(telefono):
+    """Devuelve el teléfono limpio para UI o un aviso cuando no hay número válido."""
+    digitos = extraer_telefono_valido(telefono)
+    if not digitos:
+        return "Sin teléfono válido"
+    numero = digitos[-10:]
+    telefono_formateado = f"{numero[:2]} {numero[2:6]} {numero[6:]}"
+    if len(digitos) == 12 and digitos.startswith("52"):
+        return f"+52 {telefono_formateado}"
+    return telefono_formateado
+
+
+def normalizar_telefono_whatsapp(telefono):
+    """Devuelve un teléfono mexicano en formato internacional para WhatsApp."""
+    digitos = extraer_telefono_valido(telefono)
+    if not digitos:
+        return ""
     if len(digitos) == 10:
         return f"52{digitos}"
     if len(digitos) == 12 and digitos.startswith("52"):
         return digitos
-    if len(digitos) == 13 and digitos.startswith("521"):
-        return f"52{digitos[-10:]}"
     return ""
 
 
@@ -490,6 +530,17 @@ elif section == "Verificar WhatsApp":
     nicho_sel = f3.selectbox("Nicho", nichos_disponibles)
     cantidad_mostrar = f4.number_input("Cantidad a mostrar", min_value=1, max_value=100, value=20, step=1)
 
+    if st.button("Limpiar teléfonos del Excel"):
+        backup_path = Path("prospectos_restaurantes_backup.xlsx")
+        shutil.copy2(ARCHIVO_EXCEL, backup_path)
+        telefonos_limpios = df["Telefono"].apply(telefono_para_mostrar)
+        mascara_validos = telefonos_limpios.ne("Sin teléfono válido")
+        total_limpiados = int((df.loc[mascara_validos, "Telefono"].astype(str) != telefonos_limpios[mascara_validos].astype(str)).sum())
+        df.loc[mascara_validos, "Telefono"] = telefonos_limpios[mascara_validos]
+        guardar_excel(df, ARCHIVO_EXCEL)
+        st.success(f"Respaldo creado en {backup_path} y {total_limpiados} teléfonos limpiados en el Excel.")
+        st.rerun()
+
     candidatos = df.copy()
     candidatos = candidatos[candidatos["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).str.lower() == "pendiente"]
     candidatos = candidatos[candidatos["Telefono"].fillna("").astype(str).str.strip().ne("")]
@@ -501,31 +552,30 @@ elif section == "Verificar WhatsApp":
         candidatos = candidatos[candidatos["Nicho"].fillna("").astype(str) == nicho_sel]
 
     candidatos_mostrar = candidatos.head(int(cantidad_mostrar))
-    columnas_wa = ["ID", "Nombre", "Telefono", "Prioridad", "Estado", "Nicho", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Notas"]
+    columnas_wa = ["ID", "Nombre", "Telefono", "WhatsApp", "Estado"]
     st.subheader("Prospectos para revisión manual")
     st.caption(f"Mostrando {len(candidatos_mostrar)} de {len(candidatos)} prospectos filtrados por WhatsApp = Pendiente y con teléfono.")
     if candidatos_mostrar.empty:
         st.warning("No hay prospectos que coincidan con los filtros")
     else:
-        st.dataframe(candidatos_mostrar[[c for c in columnas_wa if c in candidatos_mostrar.columns]], use_container_width=True, hide_index=True)
+        tabla_manual = candidatos_mostrar[[c for c in columnas_wa if c in candidatos_mostrar.columns]].copy()
+        if "Telefono" in tabla_manual.columns:
+            tabla_manual["Telefono"] = tabla_manual["Telefono"].apply(telefono_para_mostrar)
+        st.dataframe(tabla_manual, use_container_width=True, hide_index=True)
 
     for idx, row in candidatos_mostrar.iterrows():
         nombre = row_value(row, "Nombre", "Sin nombre")
         telefono = row_value(row, "Telefono")
-        prioridad = row_value(row, "Prioridad")
         estado_actual = row_value(row, "Estado")
-        nicho = row_value(row, "Nicho")
+        telefono_limpio = telefono_para_mostrar(telefono)
         telefono_normalizado = normalizar_telefono_whatsapp(telefono)
         wa_web_url = crear_link_whatsapp_web(telefono)
         with st.container(border=True):
-            st.markdown(f"**{nombre}**")
-            st.write(f"📞 {telefono or 'Sin teléfono'}")
-            st.write(f"Prioridad: **{prioridad or '—'}** · Estado: **{estado_actual or '—'}** · Nicho: **{nicho or '—'}**")
-            if telefono_normalizado:
-                st.write(f"Teléfono normalizado: `{telefono_normalizado}`")
-                st.code(wa_web_url, language=None)
-            else:
-                st.error("No se pudo generar enlace de WhatsApp para este número. Copia y revisa el teléfono manualmente.")
+            st.markdown(f"**ID:** {row_value(row, 'ID', '—')}")
+            st.markdown(f"**Nombre:** {nombre}")
+            st.write(f"📞 {telefono_limpio}")
+            if not telefono_normalizado:
+                st.caption("No se detectó teléfono válido")
 
             b1, b2, b3, b4 = st.columns(4)
             with b1:
