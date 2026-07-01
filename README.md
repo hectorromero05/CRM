@@ -201,58 +201,45 @@ Abre cada acción para ver la tarjeta del prospecto, contactar por WhatsApp, abr
 
 El dashboard incluye filtros por estado, prioridad, nicho, si tiene web, demo creada, repositorio, deploy, seguimiento vencido, rango de rating y rango de reseñas.
 
-## Verificación manual asistida de WhatsApp
+## Verificación manual de WhatsApp
 
-El CRM ya no automatiza WhatsApp Web con Playwright para validar números, porque ese flujo puede pedir inicio de sesión, depender del QR y generar errores. El nuevo enfoque intenta abrir primero WhatsApp Desktop en Windows con enlaces `whatsapp://send?phone=52XXXXXXXXXX` y deja un botón secundario `https://wa.me/52XXXXXXXXXX` como respaldo en navegador. La decisión se registra manualmente.
+El CRM no automatiza WhatsApp Web con Playwright para validar números. La revisión queda como un flujo manual asistido: la app solo genera enlaces `https://wa.me/52XXXXXXXXXX`, muestra el teléfono normalizado para copiarlo y guarda cambios únicamente cuando una persona presiona un botón de decisión.
 
-> **No se envían mensajes automáticamente. Esta herramienta solo abre chats para revisión manual.**
+Columnas usadas:
 
-### Columnas de Excel
+- `WhatsApp`: `Pendiente`, `Sí` o `No`.
+- `Fecha_Verificacion_WhatsApp`: fecha y hora en que se registró manualmente la revisión.
+- `Estado`: se actualiza a `WhatsApp verificado` o `Sin WhatsApp` solo cuando se confirma manualmente.
+- `Notas`: agrega `Revisar WhatsApp después` cuando se elige revisar luego.
 
-La app crea y mantiene estas columnas en `prospectos_restaurantes.xlsx`:
+Abre la sección **Verificar WhatsApp**, que muestra el encabezado **Verificación manual de WhatsApp**. Desde ahí puedes:
 
-- `WhatsApp`: `Pendiente`, `Sí`, `No` o `Error`.
-- `Fecha_Verificacion_WhatsApp`: fecha y hora en que se registró la revisión manual.
-- `Error_WhatsApp`: detalle del error o nota de revisión cuando aplique.
+1. Ver solo prospectos con `WhatsApp = Pendiente`.
+2. Ver solo prospectos que tienen teléfono capturado.
+3. Filtrar por `Prioridad`, `Estado` y `Nicho`.
+4. Definir la `Cantidad a mostrar`.
+5. Abrir el enlace `https://wa.me/52XXXXXXXXXX` con **Abrir WhatsApp**.
+6. Copiar manualmente el número normalizado o el enlace mostrado si el navegador no abre WhatsApp.
+7. Registrar la decisión con **Sí tiene WhatsApp**, **No tiene WhatsApp** o **Revisar después**.
 
-### Desde Streamlit
+Al pulsar **Sí tiene WhatsApp**, la app guarda inmediatamente el Excel con:
 
-Ejecuta:
+- `WhatsApp = Sí`
+- `Fecha_Verificacion_WhatsApp = fecha actual`
+- `Estado = WhatsApp verificado`
 
-```bash
-streamlit run app.py
-```
+Al pulsar **No tiene WhatsApp**, la app guarda inmediatamente el Excel con:
 
-Abre la sección **Verificar WhatsApp**, que ahora muestra el encabezado **Verificación manual asistida**. Desde ahí puedes:
+- `WhatsApp = No`
+- `Fecha_Verificacion_WhatsApp = fecha actual`
+- `Estado = Sin WhatsApp`
 
-1. Filtrar prospectos por **Prioridad**.
-2. Filtrar prospectos por **Estado**.
-3. Mostrar solo prospectos con `WhatsApp = Pendiente`.
-4. Mostrar solo prospectos que tienen teléfono.
-5. Ver nombre, teléfono y prioridad de cada prospecto.
-6. Ver el valor **Teléfono normalizado**, por ejemplo `523319750747` para `33 1975 0747`, `+52 33 1975 0747` o `(33) 1975-0747`.
-7. Abrir un chat con el botón **Abrir WhatsApp**, que intenta usar WhatsApp Desktop/Windows con `whatsapp://send?phone=52XXXXXXXXXX`.
-8. Usar **Abrir en navegador** como respaldo, con `https://wa.me/52XXXXXXXXXX`.
-9. Registrar el resultado con **Sí tiene WhatsApp**, **No tiene WhatsApp** o **Error / revisar después**.
+Al pulsar **Revisar después**, la app mantiene `WhatsApp = Pendiente`, agrega `Revisar WhatsApp después` en `Notas` y guarda el Excel.
 
-Si el teléfono no se puede normalizar, la app muestra: `No se pudo generar enlace de WhatsApp para este número.`
+Reglas de seguridad del flujo:
 
-Al pulsar **Sí tiene WhatsApp** o **No tiene WhatsApp**, la app actualiza `WhatsApp`, llena `Fecha_Verificacion_WhatsApp` con la fecha y hora actual, limpia/actualiza `Error_WhatsApp` y guarda inmediatamente el Excel.
-
-### Abrir siguientes N prospectos
-
-La sección incluye el control **Abrir siguientes N prospectos** con un valor configurable entre **1 y 10**. El botón de lote abre enlaces `whatsapp://send?phone=52XXXXXXXXXX` para los siguientes prospectos filtrados y nunca intenta abrir más de 10 chats a la vez.
-
-### Reglas de seguridad aplicadas
-
-- No escribe mensajes.
-- No envía mensajes.
-- No automatiza WhatsApp Web.
-- No usa Playwright para WhatsApp.
-- No usa rutas antiguas de resolución, enlaces intermedios ni esquemas móviles de Android/iOS; solo `whatsapp://send?phone=...` y `https://wa.me/...`.
-- Solo abre chats mediante `whatsapp://send?phone=...` o `wa.me` para que una persona revise manualmente.
-- Guarda el Excel después de cada decisión manual.
-
-### Verificación automática desactivada
-
-El módulo `whatsapp_checker.py` conserva utilidades de compatibilidad como normalización de teléfono y limpieza del perfil antiguo `.whatsapp_profile`, pero las funciones de verificación automática (`verificar_whatsapp_lote` y `verificar_whatsapp_por_id`) están desactivadas y muestran un error indicando que se debe usar **Verificación manual asistida**.
+- No envía mensajes automáticamente.
+- No intenta detectar WhatsApp automáticamente.
+- No usa Playwright para verificar WhatsApp.
+- No actualiza el estado hasta que presionas un botón de decisión.
+- Solo abre enlaces `https://wa.me/...` para revisión humana.

@@ -1,14 +1,11 @@
 import contextlib
 import io
 import json
-import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
-
 from buscar_maps import agregar_prospecto_desde_maps_url, buscar_prospectos, generar_busquedas
 from crm_utils import ARCHIVO_EXCEL, CLIENTES_DEFAULT, NICHOS, PLANTILLA_DEFAULT, ZONAS, asegurar_excel, guardar_excel, normalizar_telefono
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
@@ -64,11 +61,6 @@ def normalizar_telefono_whatsapp(telefono):
     return ""
 
 
-def crear_link_whatsapp_desktop(telefono):
-    numero = normalizar_telefono_whatsapp(telefono)
-    return f"whatsapp://send?phone={numero}" if numero else ""
-
-
 def crear_link_whatsapp_web(telefono):
     numero = normalizar_telefono_whatsapp(telefono)
     return f"https://wa.me/{numero}" if numero else ""
@@ -78,35 +70,17 @@ def url_whatsapp(telefono):
     return crear_link_whatsapp_web(telefono)
 
 
-def marcar_whatsapp_manual(df, idx, estado, error=""):
-    df.at[idx, "WhatsApp"] = estado
+def marcar_whatsapp_manual(df, idx, whatsapp, estado, nota="", error=""):
+    df.at[idx, "WhatsApp"] = whatsapp
     df.at[idx, "Fecha_Verificacion_WhatsApp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df.at[idx, "Estado"] = estado
     df.at[idx, "Error_WhatsApp"] = error
+    if nota:
+        notas_actuales = str(df.at[idx, "Notas"] or "").strip() if "Notas" in df.columns else ""
+        if nota not in notas_actuales:
+            df.at[idx, "Notas"] = f"{notas_actuales}; {nota}" if notas_actuales else nota
     guardar_excel(df, ARCHIVO_EXCEL)
 
-
-def boton_abrir_varios_whatsapp(urls):
-    safe_urls = [u for u in urls if u][:10]
-    if not safe_urls:
-        return
-    buttons = "".join(
-        f"window.open({json.dumps(url)}, '_blank', 'noopener,noreferrer');"
-        for url in safe_urls
-    )
-    components.html(
-        f"""
-        <button id="abrir-whatsapp-lote" style="
-            background:#25D366;color:white;border:0;border-radius:0.5rem;
-            padding:0.55rem 0.85rem;font-weight:600;cursor:pointer;
-        ">Abrir {len(safe_urls)} chat(s) en WhatsApp</button>
-        <script>
-        document.getElementById('abrir-whatsapp-lote').onclick = function() {{
-            {buttons}
-        }};
-        </script>
-        """,
-        height=52,
-    )
 
 def estado_crm(valor):
     estado = str(valor or "").strip()
@@ -492,95 +466,87 @@ elif section == "Ver prospectos":
     st.dataframe(ordenar_columnas_clave(filtered), use_container_width=True, hide_index=True)
 
 elif section == "Verificar WhatsApp":
-    st.header("Verificación manual asistida")
-    st.warning("No se envían mensajes automáticamente. Esta herramienta solo abre chats para revisión manual.")
-    st.caption("Flujo seguro: no escribe mensajes, no envía mensajes y no automatiza WhatsApp Web. Intenta abrir primero WhatsApp Desktop/Windows y también ofrece un enlace web de respaldo.")
+    st.header("Verificación manual de WhatsApp")
+    st.warning("No se envían mensajes automáticamente y no se intenta detectar WhatsApp automáticamente.")
+    st.caption("Flujo manual asistido: abre un enlace wa.me para que una persona revise el número. El Excel solo se actualiza cuando presionas Sí tiene WhatsApp, No tiene WhatsApp o Revisar después.")
 
     df = load_prospectos()
-    for columna in ["WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]:
+    for columna in ["WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp", "Notas", "Estado", "Telefono", "Prioridad", "Nicho"]:
         if columna not in df.columns:
             df[columna] = ""
     df["WhatsApp"] = df["WhatsApp"].fillna("").replace("", "Pendiente").astype(str)
 
     wa = df["WhatsApp"]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total pendientes", int(wa.eq("Pendiente").sum()))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("WhatsApp pendientes", int(wa.str.lower().eq("pendiente").sum()))
     c2.metric("WhatsApp Sí", int(wa.eq("Sí").sum()))
     c3.metric("WhatsApp No", int(wa.eq("No").sum()))
-    c4.metric("Errores", int(wa.eq("Error").sum()))
 
     f1, f2, f3, f4 = st.columns(4)
     prioridad_sel = f1.selectbox("Prioridad", ["Todas", "Alta", "Media", "Baja"])
     estados_disponibles = ["Todos"] + sorted([x for x in df.get("Estado", pd.Series(dtype=str)).dropna().astype(str).unique() if x])
     estado_sel = f2.selectbox("Estado", estados_disponibles)
-    whatsapp_pendiente = f3.checkbox("WhatsApp = Pendiente", value=True)
-    solo_con_telefono = f4.checkbox("Tiene teléfono", value=True)
+    nichos_disponibles = ["Todos"] + sorted([x for x in df.get("Nicho", pd.Series(dtype=str)).dropna().astype(str).unique() if x])
+    nicho_sel = f3.selectbox("Nicho", nichos_disponibles)
+    cantidad_mostrar = f4.number_input("Cantidad a mostrar", min_value=1, max_value=100, value=20, step=1)
 
     candidatos = df.copy()
+    candidatos = candidatos[candidatos["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).str.lower() == "pendiente"]
+    candidatos = candidatos[candidatos["Telefono"].fillna("").astype(str).str.strip().ne("")]
     if prioridad_sel != "Todas":
         candidatos = candidatos[candidatos["Prioridad"].fillna("").astype(str).str.lower() == prioridad_sel.lower()]
     if estado_sel != "Todos":
-        candidatos = candidatos[candidatos["Estado"].fillna("").astype(str).str.lower() == estado_sel.lower()]
-    if whatsapp_pendiente:
-        candidatos = candidatos[candidatos["WhatsApp"].fillna("Pendiente").replace("", "Pendiente").astype(str).str.lower() == "pendiente"]
-    if solo_con_telefono:
-        candidatos = candidatos[candidatos["Telefono"].fillna("").astype(str).str.strip().ne("")]
+        candidatos = candidatos[candidatos["Estado"].fillna("").astype(str) == estado_sel]
+    if nicho_sel != "Todos":
+        candidatos = candidatos[candidatos["Nicho"].fillna("").astype(str) == nicho_sel]
 
-    cantidad_abrir = st.number_input("Abrir siguientes N prospectos", min_value=1, max_value=10, value=3, step=1)
-    siguientes = candidatos.head(int(cantidad_abrir))
-    urls_siguientes = [crear_link_whatsapp_desktop(row.get("Telefono", "")) for _, row in siguientes.iterrows()]
-    boton_abrir_varios_whatsapp(urls_siguientes)
-
-    columnas_wa = ["ID", "Nombre", "Telefono", "Prioridad", "Estado", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
+    candidatos_mostrar = candidatos.head(int(cantidad_mostrar))
+    columnas_wa = ["ID", "Nombre", "Telefono", "Prioridad", "Estado", "Nicho", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Notas"]
     st.subheader("Prospectos para revisión manual")
-    st.caption(f"Mostrando {len(candidatos)} prospectos filtrados. El botón de lote nunca abre más de 10 chats a la vez.")
-    if candidatos.empty:
+    st.caption(f"Mostrando {len(candidatos_mostrar)} de {len(candidatos)} prospectos filtrados por WhatsApp = Pendiente y con teléfono.")
+    if candidatos_mostrar.empty:
         st.warning("No hay prospectos que coincidan con los filtros")
     else:
-        st.dataframe(candidatos[[c for c in columnas_wa if c in candidatos.columns]], use_container_width=True, hide_index=True)
+        st.dataframe(candidatos_mostrar[[c for c in columnas_wa if c in candidatos_mostrar.columns]], use_container_width=True, hide_index=True)
 
-    for idx, row in candidatos.head(50).iterrows():
+    for idx, row in candidatos_mostrar.iterrows():
         nombre = row_value(row, "Nombre", "Sin nombre")
         telefono = row_value(row, "Telefono")
         prioridad = row_value(row, "Prioridad")
         estado_actual = row_value(row, "Estado")
+        nicho = row_value(row, "Nicho")
         telefono_normalizado = normalizar_telefono_whatsapp(telefono)
-        wa_desktop_url = crear_link_whatsapp_desktop(telefono)
         wa_web_url = crear_link_whatsapp_web(telefono)
         with st.container(border=True):
             st.markdown(f"**{nombre}**")
             st.write(f"📞 {telefono or 'Sin teléfono'}")
+            st.write(f"Prioridad: **{prioridad or '—'}** · Estado: **{estado_actual or '—'}** · Nicho: **{nicho or '—'}**")
             if telefono_normalizado:
                 st.write(f"Teléfono normalizado: `{telefono_normalizado}`")
+                st.code(wa_web_url, language=None)
             else:
-                st.error("No se pudo generar enlace de WhatsApp para este número.")
-            st.write(f"Prioridad: **{prioridad or '—'}** · Estado: **{estado_actual or '—'}**")
-            b1, b2, b3, b4, b5 = st.columns(5)
+                st.error("No se pudo generar enlace de WhatsApp para este número. Copia y revisa el teléfono manualmente.")
+
+            b1, b2, b3, b4 = st.columns(4)
             with b1:
-                if wa_desktop_url:
-                    if st.button("Abrir WhatsApp", key=f"wa_open_{idx}"):
-                        webbrowser.open(wa_desktop_url)
+                if wa_web_url:
+                    st.link_button("Abrir WhatsApp", wa_web_url)
                 else:
                     st.button("Abrir WhatsApp", key=f"wa_open_disabled_{idx}", disabled=True)
             with b2:
-                if wa_web_url:
-                    st.link_button("Abrir en navegador", wa_web_url)
-                else:
-                    st.button("Abrir en navegador", key=f"wa_web_disabled_{idx}", disabled=True)
-            with b3:
                 if st.button("Sí tiene WhatsApp", key=f"wa_si_{idx}"):
-                    marcar_whatsapp_manual(df, idx, "Sí")
-                    st.success("WhatsApp marcado como Sí y Excel guardado.")
+                    marcar_whatsapp_manual(df, idx, "Sí", "WhatsApp verificado")
+                    st.success("WhatsApp marcado como Sí, estado actualizado y Excel guardado.")
+                    st.rerun()
+            with b3:
+                if st.button("No tiene WhatsApp", key=f"wa_no_{idx}"):
+                    marcar_whatsapp_manual(df, idx, "No", "Sin WhatsApp")
+                    st.success("WhatsApp marcado como No, estado actualizado y Excel guardado.")
                     st.rerun()
             with b4:
-                if st.button("No tiene WhatsApp", key=f"wa_no_{idx}"):
-                    marcar_whatsapp_manual(df, idx, "No")
-                    st.success("WhatsApp marcado como No y Excel guardado.")
-                    st.rerun()
-            with b5:
-                if st.button("Error / revisar después", key=f"wa_error_{idx}"):
-                    marcar_whatsapp_manual(df, idx, "Error", "Revisar después")
-                    st.success("WhatsApp marcado como Error y Excel guardado.")
+                if st.button("Revisar después", key=f"wa_revisar_{idx}"):
+                    marcar_whatsapp_manual(df, idx, "Pendiente", estado_actual or "Nuevo", nota="Revisar WhatsApp después")
+                    st.success("Prospecto marcado para revisar WhatsApp después y Excel guardado.")
                     st.rerun()
 
 elif section == "Crear proyecto":
