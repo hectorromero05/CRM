@@ -5,7 +5,6 @@ from crm_utils import ESTADOS, NICHOS, ZONAS, asegurar_excel, guardar_excel
 from generar_demo import generar_demos_lote, prospectos_para_demo_lote
 from project_factory import crear_proyecto_cliente, finalizar_proyecto
 from visual_analyzer import analizar_perfil_visual
-from whatsapp_checker import verificar_whatsapp_lote, verificar_whatsapp_por_id
 
 
 def ver(df=None, filtro=None):
@@ -144,51 +143,6 @@ def generar_demos_en_lote():
 
 
 
-def verificar_whatsapp_cli():
-    while True:
-        print("""
-Verificar WhatsApp
-1. Verificar un prospecto por ID
-2. Verificar próximos 20 prospectos de prioridad Alta
-3. Verificar prospectos seleccionados por IDs
-4. Ver resultados de WhatsApp
-5. Volver
-""")
-        print("Esta función solo verifica disponibilidad. No envía mensajes. Se recomienda revisar máximo 20-50 números por sesión.")
-        op = input("Elige una opción: ").strip()
-        if op == "1":
-            idp = input("ID del prospecto: ").strip()
-            df = asegurar_excel()
-            fila = df[df["ID"].astype(str) == idp]
-            forzar = False
-            if not fila.empty and str(fila.iloc[0].get("WhatsApp", "Pendiente")) in {"Sí", "No"}:
-                if input("Ya fue verificado. ¿Verificar de nuevo? (s/N): ").strip().lower() != "s":
-                    continue
-                forzar = True
-            print(verificar_whatsapp_por_id(idp, forzar=forzar))
-        elif op == "2":
-            print(verificar_whatsapp_lote(maximo=20, prioridad="Alta"))
-        elif op == "3":
-            ids = [x.strip() for x in input("IDs separados por coma: ").split(",") if x.strip()]
-            if ids:
-                df = asegurar_excel()
-                ya_verificados = df[df["ID"].astype(str).isin(ids) & df.get("WhatsApp", pd.Series(dtype=str)).astype(str).isin(["Sí", "No"])]
-                forzar = False
-                if not ya_verificados.empty:
-                    if input("Algunos IDs ya fueron verificados. ¿Verificar de nuevo? (s/N): ").strip().lower() != "s":
-                        ids = [idp for idp in ids if idp not in set(ya_verificados["ID"].astype(str))]
-                    else:
-                        forzar = True
-                print(verificar_whatsapp_lote(ids=ids, maximo=20, prioridad=None, forzar=forzar))
-        elif op == "4":
-            df = asegurar_excel()
-            columnas = ["ID", "Nombre", "Telefono", "Prioridad", "WhatsApp", "Fecha_Verificacion_WhatsApp", "Error_WhatsApp"]
-            print(df[[c for c in columnas if c in df.columns]].to_string(index=False))
-        elif op == "5":
-            break
-        else:
-            print("Opción no válida.")
-
 def exportar_filtrada():
     df = asegurar_excel()
     df["Resenas"] = pd.to_numeric(df["Resenas"], errors="coerce").fillna(0).astype(int)
@@ -217,9 +171,8 @@ CRM Restaurantes
 7. Finalizar proyecto
 8. Generar demos en lote
 9. Agregar prospecto por link de Google Maps
-10. Verificar WhatsApp
-11. Configuración
-12. Salir
+10. Configuración
+11. Salir
 """)
         op = input("Elige una opción: ").strip()
         if op == "1": buscar_nuevos()
@@ -231,9 +184,8 @@ CRM Restaurantes
         elif op == "7": finalizar_proyecto_cli()
         elif op == "8": generar_demos_en_lote()
         elif op == "9": agregar_prospecto_maps_url_cli()
-        elif op == "10": verificar_whatsapp_cli()
-        elif op == "11": print("Configura rutas y credenciales desde app.py o config.json.")
-        elif op == "12": break
+        elif op == "10": print("Configura rutas y credenciales desde app.py o config.json.")
+        elif op == "11": break
         else: print("Opción no válida.")
 
 
