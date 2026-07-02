@@ -38,7 +38,20 @@ ESTADOS_PIPELINE = [
 
 ESTADOS_EQUIVALENTES = {"Pendiente": "Nuevo", "Demo creada": "Demo enviada", "Demo publicada": "Demo enviada", "Cerrado": "Cliente", "Cotización enviada": "Negociación"}
 
+ESTADOS_WHATSAPP = [
+    "Pendiente", "Contactado", "Respondió", "Interesado", "Demo enviada",
+    "Cotización enviada", "Negociación", "Cliente", "Perdido", "Pospuesto",
+]
 
+ESTADOS_SIN_WHATSAPP = [
+    "Sin WhatsApp", "Llamar", "Buscar Instagram", "Buscar Facebook", "Buscar correo",
+    "Contactado por llamada", "Contactado por redes", "No interesado", "Pospuesto",
+]
+
+COLUMNAS_COMERCIALES_REQUERIDAS = [
+    "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto",
+    "Probabilidad_Cierre", "Valor_Estimado", "Canal", "Historial_Comercial",
+]
 
 
 
@@ -108,6 +121,60 @@ def crear_link_whatsapp_web(telefono):
 
 def url_whatsapp(telefono):
     return crear_link_whatsapp_web(telefono)
+
+
+def limpiar_telefono_visual(telefono):
+    """Limpia un teléfono para mostrarlo de forma legible en tablas comerciales."""
+    return telefono_para_mostrar(telefono)
+
+
+def tiene_demo(row):
+    """Indica si el prospecto ya tiene demo registrada."""
+    return has_value(row_value(row, "Demo"))
+
+
+def abrir_link(url):
+    """Normaliza links para botones de Streamlit; devuelve vacío si no hay URL."""
+    url = str(url or "").strip()
+    if not url:
+        return ""
+    if re.match(r"^https?://", url, re.I):
+        return url
+    return f"https://{url}"
+
+
+def asegurar_columnas_comerciales(df):
+    columnas_agregadas = False
+    for columna in COLUMNAS_COMERCIALES_REQUERIDAS:
+        if columna not in df.columns:
+            df[columna] = ""
+            columnas_agregadas = True
+    if columnas_agregadas:
+        guardar_excel(df, ARCHIVO_EXCEL)
+    return df
+
+
+def _idx_por_id(df, prospecto_id):
+    matches = df.index[df["ID"].astype(str) == str(prospecto_id)].tolist() if "ID" in df.columns else []
+    return matches[0] if matches else None
+
+
+def guardar_cambio_estado(id, nuevo_estado):
+    df = asegurar_columnas_comerciales(load_prospectos())
+    idx = _idx_por_id(df, id)
+    if idx is None:
+        return False
+    save_cell(df, idx, "Estado", nuevo_estado, f"Estado cambiado a {nuevo_estado}")
+    return True
+
+
+def actualizar_campo(id, campo, valor):
+    df = asegurar_columnas_comerciales(load_prospectos())
+    idx = _idx_por_id(df, id)
+    if idx is None:
+        return False
+    save_cell(df, idx, campo, valor, f"{campo} actualizado")
+    return True
 
 
 def marcar_whatsapp_manual(df, idx, whatsapp, estado, nota="", error=""):
@@ -273,6 +340,158 @@ def apply_filters(df, prioridad, estado, tiene_web, nicho):
     return filtered
 
 
+def _serie_texto(df, column):
+    return df.get(column, pd.Series("", index=df.index)).fillna("").astype(str)
+
+
+def _aplicar_filtros_whatsapp(df, estados_base, prefix):
+    f1, f2, f3, f4, f5, f6 = st.columns(6)
+    estado = f1.selectbox("Estado", ["Todos"] + estados_base, key=f"{prefix}_estado_filtro")
+    prioridad = f2.selectbox("Prioridad", ["Todas", "Alta", "Media", "Baja"], key=f"{prefix}_prioridad")
+    demo = f3.selectbox("Demo", ["Todos", "Sí", "No"], key=f"{prefix}_demo")
+    nichos = ["Todos"] + sorted([x for x in _serie_texto(df, "Nicho").unique() if x])
+    nicho = f4.selectbox("Nicho", nichos, key=f"{prefix}_nicho")
+    buscar = f5.text_input("Buscar por nombre", key=f"{prefix}_buscar")
+    min_resenas = f6.number_input("Reseñas mínimas", min_value=0, value=0, step=10, key=f"{prefix}_resenas")
+
+    filtered = df.copy()
+    if estado != "Todos":
+        filtered = filtered[_serie_texto(filtered, "Estado") == estado]
+    if prioridad != "Todas":
+        filtered = filtered[_serie_texto(filtered, "Prioridad").str.lower() == prioridad.lower()]
+    if demo != "Todos":
+        demo_mask = filtered.apply(tiene_demo, axis=1)
+        filtered = filtered[demo_mask if demo == "Sí" else ~demo_mask]
+    if nicho != "Todos":
+        filtered = filtered[_serie_texto(filtered, "Nicho") == nicho]
+    if buscar:
+        filtered = filtered[_serie_texto(filtered, "Nombre").str.contains(buscar, case=False, na=False)]
+    resenas = pd.to_numeric(filtered.get("Resenas", pd.Series(0, index=filtered.index)), errors="coerce").fillna(0)
+    return filtered[resenas >= int(min_resenas)]
+
+
+def _guardar_ediciones_tabla(df, edited, columns, prefix):
+    if edited is None or edited.empty:
+        return
+    cambios = 0
+    for _, edited_row in edited.iterrows():
+        prospecto_id = edited_row.get("ID")
+        idx = _idx_por_id(df, prospecto_id)
+        if idx is None:
+            continue
+        for column in columns:
+            if column not in edited_row:
+                continue
+            old = "" if pd.isna(df.at[idx, column]) else df.at[idx, column]
+            new = "" if pd.isna(edited_row[column]) else edited_row[column]
+            if str(old) != str(new):
+                df.at[idx, column] = new
+                cambios += 1
+    if cambios:
+        guardar_excel(df, ARCHIVO_EXCEL)
+        st.success(f"{cambios} cambio(s) guardado(s) inmediatamente.")
+        st.rerun()
+
+
+def _tabla_comercial(df, filtered, columnas, estados, prefix):
+    tabla = filtered[[c for c in columnas if c in filtered.columns]].copy()
+    if "Telefono" in tabla.columns:
+        tabla["Telefono"] = tabla["Telefono"].apply(limpiar_telefono_visual)
+    if "Demo" in tabla.columns:
+        tabla["Demo"] = filtered.apply(lambda row: "Sí" if tiene_demo(row) else "No", axis=1)
+    editables = [c for c in ["Estado", "Notas", "Ultimo_Contacto", "Proximo_Seguimiento", "Persona_Contacto", "Probabilidad_Cierre", "Valor_Estimado"] if c in tabla.columns]
+    disabled = [c for c in tabla.columns if c not in editables]
+    edited = st.data_editor(
+        tabla,
+        use_container_width=True,
+        hide_index=True,
+        disabled=disabled,
+        column_config={"Estado": st.column_config.SelectboxColumn("Estado", options=estados)},
+        key=f"{prefix}_editor",
+    )
+    _guardar_ediciones_tabla(df, edited, editables, prefix)
+
+
+def _render_acciones_prospectos(df, filtered, estados, prefix, sin_whatsapp=False):
+    st.subheader("Acciones rápidas por ID")
+    if filtered.empty:
+        st.info("No hay prospectos con los filtros actuales.")
+        return
+    options = [f"{row.ID} - {row.Nombre}" for row in filtered[["ID", "Nombre"]].itertuples(index=False)]
+    selected = st.selectbox("Prospecto", options, key=f"{prefix}_selected")
+    prospecto_id = selected.split(" - ", 1)[0]
+    idx = _idx_por_id(df, prospecto_id)
+    row = df.loc[idx]
+    bcols = st.columns(5)
+    with bcols[0]:
+        maps = abrir_link(row_value(row, "Google_Maps"))
+        if maps:
+            st.link_button("Abrir Google Maps", maps, use_container_width=True)
+    with bcols[1]:
+        if sin_whatsapp:
+            st.code(limpiar_telefono_visual(row_value(row, "Telefono")), language=None)
+        else:
+            wa = crear_link_whatsapp_web(row_value(row, "Telefono"))
+            if wa:
+                st.link_button("Abrir WhatsApp", wa, use_container_width=True)
+    with bcols[2]:
+        demo_url = abrir_link(row_value(row, "Vercel_URL") or row_value(row, "URL_Vercel") or row_value(row, "Demo"))
+        if demo_url:
+            st.link_button("Abrir demo", demo_url, use_container_width=True)
+        elif sin_whatsapp:
+            sitio = abrir_link(row_value(row, "Sitio_web"))
+            if sitio:
+                st.link_button("Abrir sitio web", sitio, use_container_width=True)
+    with bcols[3]:
+        if sin_whatsapp and st.button("Marcar para llamada", key=f"{prefix}_llamar"):
+            guardar_cambio_estado(prospecto_id, "Llamar"); st.rerun()
+    with bcols[4]:
+        if sin_whatsapp and st.button("Marcar pospuesto", key=f"{prefix}_pospuesto"):
+            guardar_cambio_estado(prospecto_id, "Pospuesto"); st.rerun()
+
+    with st.form(f"{prefix}_form_{prospecto_id}"):
+        c1, c2, c3 = st.columns(3)
+        nuevo_estado = c1.selectbox("Estado", estados, index=estados.index(row_value(row, "Estado")) if row_value(row, "Estado") in estados else 0)
+        ultimo = c2.text_input("Ultimo_Contacto", str(row_value(row, "Ultimo_Contacto")))
+        proximo = c3.text_input("Proximo_Seguimiento", str(row_value(row, "Proximo_Seguimiento")))
+        persona = c1.text_input("Persona_Contacto", str(row_value(row, "Persona_Contacto")))
+        prob = c2.number_input("Probabilidad_Cierre", 0, 100, int(float(row_value(row, "Probabilidad_Cierre") or 0)))
+        valor = c3.number_input("Valor_Estimado", min_value=0.0, value=float(row_value(row, "Valor_Estimado") or 0), step=100.0)
+        notas = st.text_area("Notas", str(row_value(row, "Notas")))
+        if st.form_submit_button("Guardar cambios", type="primary"):
+            for campo, valor_campo in {"Estado": nuevo_estado, "Ultimo_Contacto": ultimo, "Proximo_Seguimiento": proximo, "Persona_Contacto": persona, "Probabilidad_Cierre": prob, "Valor_Estimado": valor, "Notas": notas}.items():
+                df.at[idx, campo] = valor_campo
+            guardar_excel(df, ARCHIVO_EXCEL)
+            st.success("Cambios guardados inmediatamente.")
+            st.rerun()
+
+
+def render_prospectos_whatsapp(tiene_whatsapp=True):
+    df = asegurar_columnas_comerciales(load_prospectos())
+    if "WhatsApp" not in df.columns:
+        df["WhatsApp"] = ""
+    valor = "sí" if tiene_whatsapp else "no"
+    subset = df[_serie_texto(df, "WhatsApp").str.lower().isin({valor, "si" if tiene_whatsapp else "no"})].copy()
+    estados = ESTADOS_WHATSAPP if tiene_whatsapp else ESTADOS_SIN_WHATSAPP
+    if tiene_whatsapp:
+        st.header("Prospectos con WhatsApp")
+        metrics = [("Total con WhatsApp", len(subset)), ("Pendientes", metric_count(subset, "Estado", "Pendiente")), ("Contactados", metric_count(subset, "Estado", "Contactado")), ("Interesados", metric_count(subset, "Estado", "Interesado")), ("Demo enviada", metric_count(subset, "Estado", "Demo enviada")), ("Clientes", metric_count(subset, "Estado", "Cliente"))]
+        columnas = ["ID", "Nombre", "Telefono", "Resenas", "Prioridad", "Estado", "Google_Maps", "Demo", "Repositorio_GitHub", "Vercel_URL", "Ultimo_Contacto", "Proximo_Seguimiento", "Notas", "Persona_Contacto", "Probabilidad_Cierre", "Valor_Estimado"]
+        prefix = "con_wa"
+    else:
+        st.header("Prospectos sin WhatsApp")
+        contactados = int(_serie_texto(subset, "Estado").isin(["Contactado por llamada", "Contactado por redes"]).sum())
+        metrics = [("Total sin WhatsApp", len(subset)), ("Alta prioridad sin WhatsApp", metric_count(subset, "Prioridad", "Alta")), ("Para llamar", metric_count(subset, "Estado", "Llamar")), ("Pospuestos", metric_count(subset, "Estado", "Pospuesto")), ("Contactados por otro canal", contactados)]
+        columnas = ["ID", "Nombre", "Telefono", "Resenas", "Prioridad", "Estado", "Google_Maps", "Demo", "Sitio_web", "Notas"]
+        prefix = "sin_wa"
+    for col, (label, value) in zip(st.columns(len(metrics)), metrics):
+        col.metric(label, int(value))
+    filtered = _aplicar_filtros_whatsapp(subset, estados, prefix)
+    st.caption(f"Mostrando {len(filtered)} de {len(subset)} prospectos.")
+    _tabla_comercial(df, filtered, columnas, estados, prefix)
+    _render_acciones_prospectos(df, filtered, estados, prefix, sin_whatsapp=not tiene_whatsapp)
+
+
 def export_excel(df, name):
     EXPORT_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -290,7 +509,7 @@ st.title("CRM Restaurantes")
 
 section = st.sidebar.radio(
     "Secciones",
-    ["Dashboard", "Buscar prospectos", "Agregar por Google Maps", "Ver prospectos", "Verificar WhatsApp", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
+    ["Dashboard", "Buscar prospectos", "Agregar por Google Maps", "Ver prospectos", "Prospectos con WhatsApp", "Prospectos sin WhatsApp", "Verificar WhatsApp", "Crear proyecto", "Finalizar proyecto", "Exportar", "Configuración"],
 )
 
 if section == "Dashboard":
@@ -504,6 +723,12 @@ elif section == "Ver prospectos":
     filtered = apply_filters(df, prioridad, estado, tiene_web, nicho)
     st.caption(f"Mostrando {len(filtered)} de {len(df)} prospectos")
     st.dataframe(ordenar_columnas_clave(filtered), use_container_width=True, hide_index=True)
+
+elif section == "Prospectos con WhatsApp":
+    render_prospectos_whatsapp(tiene_whatsapp=True)
+
+elif section == "Prospectos sin WhatsApp":
+    render_prospectos_whatsapp(tiene_whatsapp=False)
 
 elif section == "Verificar WhatsApp":
     st.header("Verificación manual de WhatsApp")
