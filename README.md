@@ -74,6 +74,7 @@ La nueva interfaz web mantiene la consola intacta y permite operar el CRM desde 
 
 - Buscar prospectos por nichos, zonas y máximo por búsqueda.
 - Ver `prospectos_restaurantes.xlsx` en una tabla interactiva con filtros por prioridad, estado, web y nicho.
+- Gestionar **Prospectos con WhatsApp** y **Prospectos sin WhatsApp** en secciones separadas con métricas, filtros, acciones rápidas y guardado inmediato en Excel.
 - Revisar métricas de total de prospectos, prioridad alta, sin página web, contactados, interesados y cerrados.
 - Generar demo completa para un prospecto seleccionado por ID o nombre.
 - Exportar Excel de todos los prospectos, prioridad alta, sin página web o contactados.
@@ -200,6 +201,35 @@ Abre cada acción para ver la tarjeta del prospecto, contactar por WhatsApp, abr
 ### Filtros disponibles
 
 El dashboard incluye filtros por estado, prioridad, nicho, si tiene web, demo creada, repositorio, deploy, seguimiento vencido, rango de rating y rango de reseñas.
+
+## Gestión comercial por WhatsApp
+
+La interfaz de Streamlit agrega dos secciones específicas para separar el trabajo comercial según la columna `WhatsApp` de `prospectos_restaurantes.xlsx`:
+
+### Prospectos con WhatsApp
+
+Muestra únicamente registros con `WhatsApp = Sí`. Incluye métricas de total con WhatsApp, pendientes, contactados, interesados, demos enviadas y clientes. La tabla muestra teléfono limpio, estado, prioridad, reseñas, links de Google Maps, demo, repositorio, Vercel, fechas de seguimiento y notas.
+
+Desde esta sección puedes:
+
+- Filtrar por `Estado`, `Prioridad`, `Demo`, `Nicho`, nombre y reseñas mínimas.
+- Cambiar `Estado` con estados comerciales como `Pendiente`, `Contactado`, `Respondió`, `Interesado`, `Demo enviada`, `Cotización enviada`, `Negociación`, `Cliente`, `Perdido` y `Pospuesto`.
+- Editar `Notas`, `Ultimo_Contacto`, `Proximo_Seguimiento`, `Persona_Contacto`, `Probabilidad_Cierre` y `Valor_Estimado`.
+- Abrir Google Maps, WhatsApp y demo cuando existan enlaces disponibles.
+- Guardar cada cambio inmediatamente en `prospectos_restaurantes.xlsx` usando el `ID` como referencia principal.
+
+### Prospectos sin WhatsApp
+
+Muestra únicamente registros con `WhatsApp = No`. Está pensada para canales alternativos como llamada telefónica, Instagram, Facebook, correo, visita o revisión posterior. Incluye métricas de total sin WhatsApp, alta prioridad sin WhatsApp, para llamar, pospuestos y contactados por otro canal.
+
+Desde esta sección puedes:
+
+- Filtrar por `Prioridad`, `Estado`, `Nicho`, `Demo`, nombre y reseñas mínimas.
+- Cambiar `Estado` con opciones como `Sin WhatsApp`, `Llamar`, `Buscar Instagram`, `Buscar Facebook`, `Buscar correo`, `Contactado por llamada`, `Contactado por redes`, `No interesado` y `Pospuesto`.
+- Abrir Google Maps, copiar visualmente el teléfono limpio, abrir sitio web si existe, marcar para llamada o marcar pospuesto.
+- Editar notas y datos de seguimiento comercial con guardado inmediato en `prospectos_restaurantes.xlsx`.
+
+Si faltan columnas comerciales (`Ultimo_Contacto`, `Proximo_Seguimiento`, `Persona_Contacto`, `Probabilidad_Cierre`, `Valor_Estimado`, `Canal` o `Historial_Comercial`), la app las crea automáticamente al cargar y guardar el Excel.
 
 ## Verificación manual de WhatsApp
 
